@@ -1,3 +1,4 @@
+import fs from 'fs';
 import 'dotenv/config';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
@@ -43,16 +44,79 @@ function getSystemInfo() {
     };
 }
 
+function checkRegla1InContent(content) {
+    return content.split('\n').some(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine.match(/^REGLA_1\s*=\s*.+/)) {
+            const value = trimmedLine.split('=')[1]?.trim();
+            return value && value !== '""' && value !== "''";
+        }
+        return false;
+    });
+}
+
+async function verifyAndRetryIfNeeded(envPath) {
+    try {
+        const envContent = fs.readFileSync(envPath, 'utf8');
+        const hasRegla1 = checkRegla1InContent(envContent);
+        
+        if (hasRegla1) {
+            console.log(cristal('✅ Variables configuradas correctamente'));
+            return true;
+        } else {
+            console.log(instagram('❌ REGLA_1 aún no está configurada'));
+            console.log(instagram('¿Quieres abrir el editor nuevamente? (presiona Enter para continuar o Ctrl+C para salir)'));
+            
+            await new Promise((resolve) => {
+                process.stdin.once('data', () => resolve());
+            });
+            
+            return await checkAndEditEnv();
+        }
+    } catch (error) {
+        console.log(instagram('❌ Error verificando configuración:', error.message));
+        return false;
+    }
+}
+
 async function checkAndEditEnv() {
     const envPath = path.join(__dirname, '.env');
+    const envExamplePath = path.join(__dirname, 'Extras', 'Otros', '.env.example');
     
-    if (existsSync(envPath)) {
-        console.log(cristal('🔧 Variables OK'));
-        return true;
+    if (!existsSync(envPath)) {
+        if (existsSync(envExamplePath)) {
+            try {
+                const envExampleContent = fs.readFileSync(envExamplePath, 'utf8');
+                fs.writeFileSync(envPath, envExampleContent);
+                console.log(cristal('📋 Copiado .env.example → .env'));
+            } catch (error) {
+                console.log(instagram('❌ Error copiando .env.example:', error.message));
+                console.log(instagram('Crea manualmente el archivo .env'));
+                return false;
+            }
+        } else {
+            console.log(instagram('❌ No se encontró .env.example'));
+            console.log(instagram('Crea manualmente el archivo .env'));
+            return false;
+        }
+    }
+    
+    try {
+        const envContent = fs.readFileSync(envPath, 'utf8');
+        const hasRegla1 = checkRegla1InContent(envContent);
+        
+        if (hasRegla1) {
+            console.log(cristal('🔧 Variables OK'));
+            return true;
+        } else {
+            console.log(cristal('⚠️ Falta configurar REGLA_1'));
+        }
+    } catch (error) {
+        console.log(instagram('❌ Error leyendo .env:', error.message));
     }
     
     const systemInfo = getSystemInfo();
-    const extrasPath = path.join(__dirname, 'Extras', 'MSEdit');
+    const extrasPath = path.join(__dirname, 'Extras', 'Otros', 'MSEdit');
     
     let editorPath = '';
     
@@ -64,16 +128,16 @@ async function checkAndEditEnv() {
         } else if (systemInfo.isX64) {
             editorPath = path.join(extrasPath, 'edit-linux-x86_64');
         } else {
-            console.log(instagram('Corrige el .env'));
+            console.log(instagram('Corrige el .env manualmente'));
             return false;
         }
     } else {
-        console.log(instagram('Corrige el .env'));
+        console.log(instagram('Corrige el .env manualmente'));
         return false;
     }
     
     if (!existsSync(editorPath)) {
-        console.log(instagram('Corrige el .env'));
+        console.log(instagram('Editor no encontrado. Corrige el .env manualmente'));
         return false;
     }
     
@@ -81,8 +145,8 @@ async function checkAndEditEnv() {
         if (systemInfo.isLinux) {
             await execAsync(`chmod +x "${editorPath}"`);
         }
-        console.log(instagram('❌Error:', error));
-        console.log(cristal('Abriendo editor env...'));
+        
+        console.log(cristal('🔧 Abriendo editor para configurar .env...'));
         
         if (systemInfo.isWindows) {
             await execAsync(`start /wait "" "${editorPath}" "${envPath}"`);
@@ -103,19 +167,11 @@ async function checkAndEditEnv() {
                 });
             });
         }
-        
-        if (existsSync(envPath)) {
-
-            console.log(cristal('Variables OK'));
-            return true;
-        } else {
-            console.log(instagram('Corrige el .env'));
-            return false;
-        }
+        return await verifyAndRetryIfNeeded(envPath);
         
     } catch (error) {
         console.log(instagram('❌ Error ejecutando editor:', error.message));
-        console.log(instagram('Corrige el .env'));
+        console.log(instagram('Configura manualmente el archivo .env'));
         return false;
     }
 }
