@@ -1,0 +1,455 @@
+# AcopleBot
+
+# Video Demostrativo
+https://github.com/user-attachments/assets/c7ce3b98-7b0b-44ab-b9bf-c0f4fff7fb6d
+
+> [!IMPORTANT]
+> # Need 
+
+# Debian/Ubuntu:
+```
+sudo apt-get install webp jq nodejs python-pip -y
+
+```
+
+# Arch Linux:
+```
+sudo pacman -S libwebp jq nodejs npm python-pip --noconfirm --needed
+
+```
+#Termux:
+```
+
+```
+
+
+# Windows:
+### Windows 8+
+Open PowerShell and Run:
+```
+winget install libwebp -e --scope machine --source winget
+winget install jq -e --scope machine --source winget
+winget install git -e --scope machine --source winget
+winget install nodejs -e --scope machine --source winget
+winget install python3 -e --scope machine --source winget
+
+```
+### Win7:
+Open CMD and Run:
+Install Chocolatey:
+https://anilmainali.github.io/2016-06-01-How-To-Install-Chocolatey-on-Windows-7/
+```
+@powershell -NoProfile -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))" && SET PATH=%PATH%;%ALLUSERSPROFILE%\chocolatey\bin
+
+```
+
+Install Deps:
+```
+
+```
+
+Run Script:
+```
+
+```
+
+### Ejemplo de Funcionamiento en Vivo:
+ [WhatsApp](https://github.com/lyfe00011/levanter) · [Telegram](https://t.me/tgtowabot) · 
+
+
+
+Estructura Universal del Mensaje
+Si una plataforma no es compatible solo pondra "null"
+
+
+Cada script debe tener
+ABMetaInfo({
+  pattern: 'echo ?(.*)', // en caso de ser plugin
+  url: 'link' //para autoactualizar
+  sudo: false,
+  desc: 'Repite el mensaje',
+  type: 'utilidad',
+  deps: ['cfonts', 'baileys@12.5'] // dependencias node
+})
+
+los adaptadores solo tienen la info dependencia
+
+
+
+# Sistema Universal de Mensajes - Documentación
+
+## Estructura del Mensaje Universal
+
+```json
+{
+  "universalId": "uuid-generado-por-adaptador",
+  "timestamp": 1234567890,
+  "platform": "telegram|discord|matrix|whatsapp|slack|etc",
+  "adapterId": "nombre-instancia-adaptador", 
+  "eventType": "message|edit|delete|reaction|join|leave|ban|pin|api|error",
+
+  "server": {
+    "id": "server_id", // null si no aplica (Telegram, WhatsApp)
+    "name": "Server Name"
+  },
+  "conversation": {
+    "id": "chat_channel_room_id",
+    "name": "Nombre del chat/canal",
+    "type": "private|group|channel|thread|dm"
+  },
+  "thread": {
+    "id": "thread_id", // null si no es hilo o tema
+    "name": "Thread Name"
+  },
+
+  "author": {
+    "id": "user_id",
+    "username": "username",
+    "displayName": "Display Name",
+    "avatarUrl": "https://...", // null si no tiene
+    "avatarPath": "./media/file.jpg", 
+    "bot": false
+  },
+
+  "message": {
+    "id": "message_id_nativo",
+    "text": "Contenido del mensaje", 
+    "textFormatted": "<b>HTML</b> o markdown", // null si no soporta formato
+    "replyTo": {
+      "messageId": "id_mensaje_original_en_la_plataforma",
+      "universalId": "uuid_si_existe",
+      "text": "texto_citado_resumido",
+      "author": {
+        "id": "user_id_autor_original",
+        "username": "username_autor",
+        "displayName": "Display Name",
+        "avatarUrl": "https://..."
+      }
+    },
+    "edited": true, // solo true si fue editado
+    "pinned": false
+  },
+
+  "attachments": [
+    {
+      "type": "image|video|audio|document|sticker|gif|voice|video_note",
+      "fileUrl": "https://cdn.../file.jpg", // URL remota original
+      "filePath": "./media/file.jpg", // ruta local descargada
+      "filename": "document.pdf",
+      "mimeType": "image/jpeg",
+      "size": 1048576, // bytes
+      "width": 1920, // null si no aplica
+      "height": 1080,
+      "duration": 120, // segundos, null si no aplica
+      "caption": "Descripción"
+    }
+  ],
+
+  "reaction": {
+    "emoji": "👍",
+    "messageId": "id_mensaje_reaccionado",
+    "added": true // false si la quitó
+  },
+
+  "socialEvent": {
+    "action": "join|leave|ban|kick|promote|demote|mute|unmute",
+    "targetUser": {
+      "id": "user_id",
+      "username": "username", 
+      "displayName": "Display Name"
+    },
+    "moderator": { /* mismo formato que targetUser, null si es automático */ },
+    "reason": "Spam", // null si no hay razón
+    "duration": 3600, // segundos, null si permanente
+    "role": "Moderator" // para promote/demote
+  },
+
+  "configChange": {
+    "setting": "title|description|photo|permissions|slowmode",
+    "oldValue": "Valor anterior",
+    "newValue": "Valor nuevo",
+    "changedBy": { /* formato author */ }
+  },
+
+  "apiCall": {
+    "api": "node-telegram-bot-api",
+    "command": " bot.sendMessage(chatId, 'Received your message');"
+    "api": "node-telegram-bot-api|discord.js|matrix-sdk", // pueden ser varios asi un script ejecutar diferentes acciones en diferentes apis
+    "command": "comando_especifico"
+  },
+
+  "raw": { /* datos originales de la API de la plataforma */ }
+}
+```
+
+## Sistema de Índices Redis
+
+### Estructura de Claves Redis
+
+```
+# Historial global (lista principal)
+history:global
+
+# Índice por universalId
+index:universal:{universalId}
+  - universalId
+  - platform
+  - messageId
+  - chatId
+  - authorId
+  - timestamp
+  - text
+
+# Mapeo plataforma -> universalId
+index:platform:{platform}:{messageId} -> universalId
+```
+
+### Variables de Entorno Requeridas
+
+```bash
+# Redis/Valkey
+VALKEY_HOST=localhost
+VALKEY_PORT=6379
+
+# Identificación del adaptador
+ADAPTER_ID=telegram-main|discord-main|matrix-main
+
+# Canal/Chat destino para recibir mensajes cross-platform
+TARGET_CHAT_ID=123456789
+TARGET_CHANNEL_ID=123456789
+```
+
+## Implementación de Adaptadores
+
+### 1. Funciones Base Requeridas
+
+```javascript
+// Crear índices para búsqueda rápida
+async function createMessageIndex(universalId, messageData) {
+  const indexKey = `index:universal:${universalId}`;
+  await indexClient.hSet(indexKey, {
+    universalId: universalId,
+    platform: messageData.platform,
+    messageId: messageData.message?.id || '',
+    chatId: messageData.conversation.id,
+    authorId: messageData.author.id,
+    timestamp: messageData.timestamp.toString(),
+    text: messageData.message?.text || ''
+  });
+
+  if (messageData.message?.id) {
+    const platformKey = `index:platform:${messageData.platform}:${messageData.message.id}`;
+    await indexClient.set(platformKey, universalId);
+  }
+
+  await indexClient.expire(indexKey, 86400 * 30); // 30 días
+}
+
+// Buscar mensaje por universalId
+async function findMessageByUniversalId(universalId) {
+  const indexKey = `index:universal:${universalId}`;
+  const messageData = await indexClient.hGetAll(indexKey);
+  return Object.keys(messageData).length > 0 ? messageData : null;
+}
+
+// Buscar mensaje original para quotes
+async function findOriginalMessage(replyToMessageId) {
+  // 1. Buscar en índice local primero
+  const platformKey = `index:platform:${PLATFORM_NAME}:${replyToMessageId}`;
+  const universalId = await indexClient.get(platformKey);
+  
+  if (universalId) {
+    return await findMessageByUniversalId(universalId);
+  }
+
+  // 2. Buscar en historial global (últimos 1000 mensajes)
+  const historyLength = await indexClient.lLen('history:global');
+  const searchLimit = Math.min(historyLength, 1000);
+  
+  for (let i = 0; i < searchLimit; i++) {
+    const messageStr = await indexClient.lIndex('history:global', -1 - i);
+    if (!messageStr) continue;
+    
+    try {
+      const message = JSON.parse(messageStr);
+      if (message.platform === PLATFORM_NAME && 
+          message.message?.id === replyToMessageId) {
+        return message;
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+  
+  return null;
+}
+
+// Encontrar mensaje equivalente en la plataforma local
+async function findLocalMessageByUniversalId(universalId) {
+  const messageData = await findMessageByUniversalId(universalId);
+  if (messageData && messageData.platform === PLATFORM_NAME) {
+    return messageData.messageId; // Devolver ID nativo para quote
+  }
+  return null;
+}
+```
+
+### 2. Procesamiento de Quotes Cross-Platform
+
+```javascript
+// En createUniversalMessage - procesar replyTo
+if (originalMessage.reply_to_message) {
+  const originalMessage = await findOriginalMessage(originalMessage.reply_to_message.id);
+  
+  universalMessage.message.replyTo = {
+    messageId: originalMessage.reply_to_message.id,
+    universalId: originalMessage ? originalMessage.universalId : null,
+    text: originalMessage.reply_to_message.text.substring(0, 100),
+    author: {
+      id: originalMessage ? originalMessage.author?.id : originalMessage.reply_to_message.from.id,
+      username: originalMessage ? originalMessage.author?.username : originalMessage.reply_to_message.from.username,
+      displayName: originalMessage ? originalMessage.author?.displayName : originalMessage.reply_to_message.from.displayName,
+      avatarUrl: originalMessage ? originalMessage.author?.avatarUrl : null
+    }
+  };
+}
+
+// En sendUniversalMessage - procesar quotes entrantes
+let replyToMessageId = null;
+if (universalMsg.message?.replyTo?.universalId) {
+  replyToMessageId = await findLocalMessageByUniversalId(universalMsg.message.replyTo.universalId);
+}
+
+const sendOptions = {};
+if (replyToMessageId) {
+  sendOptions.reply_to_message_id = replyToMessageId; // Telegram
+  sendOptions.message_reference = { message_id: replyToMessageId }; // Discord
+}
+```
+
+### 3. Publicación y Suscripción
+
+```javascript
+// Publicar evento
+async function publishEvent(data, eventType, extraData = {}) {
+  const universalMessage = await createUniversalMessage(data, eventType, extraData);
+  
+  // Publicar a Redis
+  await publisherClient.publish('bot.On.AdaptadorMessage', JSON.stringify(universalMessage));
+  await indexClient.rPush('history:global', JSON.stringify(universalMessage));
+  
+  // Crear índices si es mensaje
+  if (universalMessage.message) {
+    await createMessageIndex(universalMessage.universalId, universalMessage);
+  }
+}
+
+// Suscribirse a mensajes universales
+await subscriberClient.subscribe('bot.On.AdaptadorMessage', async (rawMessage, channel) => {
+  try {
+    const universalMsg = JSON.parse(rawMessage);
+    await sendUniversalMessageToPlatform(universalMsg);
+  } catch (error) {
+    console.error('Error procesando mensaje de suscripción:', error);
+  }
+});
+```
+
+## Flujo de Quotes Cross-Platform
+
+### Ejemplo: Usuario en Discord responde a mensaje de Telegram
+
+1. **Mensaje original (Telegram)**:
+   - Se publica con `universalId: "abc123"`
+   - Se indexa: `index:platform:telegram:456 -> abc123`
+   - Se envía a Discord como mensaje `789`
+   - Se indexa: `index:platform:discord:789 -> abc123`
+
+2. **Respuesta (Discord)**:
+   - Usuario responde al mensaje `789` en Discord
+   - Sistema busca: `index:platform:discord:789` → encuentra `universalId: abc123`
+   - Busca mensaje original: `index:universal:abc123`
+   - Crea `replyTo` con `universalId: abc123`
+
+3. **Envío a Telegram**:
+   - Recibe mensaje con `replyTo.universalId: abc123`
+   - Busca: `index:universal:abc123` → encuentra `messageId: 456`
+   - Envía mensaje con `reply_to_message_id: 456` (quote nativo)
+
+## Tipos de Eventos Soportados
+
+### Mensajes
+- `message`: Mensaje nuevo
+- `edit`: Mensaje editado
+- `delete`: Mensaje eliminado
+- `pin`: Mensaje fijado
+
+### Sociales
+- `join`: Usuario se une
+- `leave`: Usuario sale
+- `ban`: Usuario baneado
+- `reaction`: Reacción añadida/removida
+
+### Sistema
+- `api`: Llamada directa a API
+- `error`: Error del sistema
+
+## Manejo de Media
+
+### Descarga Sincrónica
+```javascript
+async function downloadFile(url, fileName) {
+  return new Promise((resolve, reject) => {
+    const localPath = path.join(MEDIA_FOLDER, fileName);
+    const file = fs.createWriteStream(localPath);
+    const request = url.startsWith('https') ? https : http;
+    
+    request.get(url, (response) => {
+      if (response.statusCode >= 300 && response.statusCode < 400) {
+        return downloadFile(response.headers.location, fileName)
+               .then(resolve).catch(reject);
+      }
+      
+      if (response.statusCode !== 200) {
+        reject(new Error(`HTTP ${response.statusCode}`));
+        return;
+      }
+      
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close();
+        resolve(localPath);
+      });
+      file.on('error', reject);
+    }).on('error', reject);
+  });
+}
+```
+
+### Envío Cross-Platform
+```javascript
+// Verificar existencia del archivo
+if (attachment.filePath && fs.existsSync(attachment.filePath)) {
+  switch (attachment.type) {
+    case 'image':
+      await platform.sendPhoto(chatId, attachment.filePath, options);
+      break;
+    case 'video':
+      await platform.sendVideo(chatId, attachment.filePath, options);
+      break;
+    // ... otros tipos
+  }
+} else {
+  await platform.sendMessage(chatId, `📁 Media no encontrada: ${attachment.filename}`);
+}
+```
+
+## Ejemplo de Implementación Completa
+
+Ver `telegram.js` en los archivos adjuntos como referencia de implementación completa con:
+- Sistema de índices Redis
+- Quotes nativos cross-platform
+- Manejo de media sincrónico
+- Prevención de loops infinitos
+- Mapeo bidireccional de mensajes
+- Escalabilidad para múltiples instancias

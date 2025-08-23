@@ -1,0 +1,20 @@
+{
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.21.0",
+    "dotenv": "^16.0.3",
+    "gradient-string": "^3.0.0",
+    "matrix-bot-sdk": "^0.7.1",
+    "matrix-js-sdk": "^37.12.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "redis": "^4.6.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
