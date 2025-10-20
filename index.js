@@ -116,7 +116,7 @@ async function checkAndEditEnv() {
     }
     
     const systemInfo = getSystemInfo();
-    const extrasPath = path.join(__dirname, 'Extras', 'Otros', 'Binarios' 'MSEdit');
+    const extrasPath = path.join(__dirname, 'Extras', 'Otros', 'Binarios', 'MSEdit');
     
     let editorPath = '';
     
