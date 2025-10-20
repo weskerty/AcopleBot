@@ -180,13 +180,13 @@ async function installDependencies() {
     
     console.log('📡 Actualizando...\n');
     
-    try {
-        const { stdout, stderr } = await execAsync('git pull', { cwd: __dirname });
-        if (stdout) console.log(stdout);
-        if (stderr && !stderr.includes('Already up to date')) console.log(stderr);
-    } catch (error) {
-        console.error('❌', error.message);
-    }
+try {
+    await execAsync('git fetch --all', { cwd: __dirname });
+    await execAsync('git reset --hard origin/master', { cwd: __dirname });
+} catch (error) {
+    console.error('❌ Error actualizando repositorio:', error.message);
+}
+
 
     console.log('📦 Instalando...');
     try {
