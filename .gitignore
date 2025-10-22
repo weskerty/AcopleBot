@@ -1,15 +1,19 @@
-
+#Archivos Multimedia Temporales
 src/media/
-README.md
+
+#Archivos no Temporales generados por Plugins o Adaptadores. Como Base de datos etc
+Extras/DatosPlugins/
+
+
+
+
+
+
+
+
+
+
 package-lock.json
-
-
-
-
-
-
-
-
 
 
 # Logs

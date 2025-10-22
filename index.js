@@ -29,7 +29,6 @@ function startBanner() {
     console.log('');
 }
 
-
 function getSystemInfo() {
     const platform = os.platform();
     const arch = os.arch();
@@ -81,7 +80,7 @@ async function verifyAndRetryIfNeeded(envPath) {
 
 async function checkAndEditEnv() {
     const envPath = path.join(__dirname, '.env');
-    const envExamplePath = path.join(__dirname, 'Extras', 'Otros', '.env.example');
+    const envExamplePath = path.join(__dirname, '.env.example');
     
     if (!existsSync(envPath)) {
         if (existsSync(envExamplePath)) {
@@ -176,23 +175,148 @@ async function checkAndEditEnv() {
     }
 }
 
-async function installDependencies() {
-    
-    console.log('📡 Actualizando...\n');
-    
-try {
-    await execAsync('git fetch --all', { cwd: __dirname });
-    await execAsync('git reset --hard origin/master', { cwd: __dirname });
-} catch (error) {
-    console.error('❌ Error actualizando repositorio:', error.message);
+function extractABMetaInfo(content) {
+    try {
+        const metaMatch = content.match(/ABMetaInfo\s*\(\s*\{([^}]+)\}\s*\)/s);
+        if (!metaMatch) return null;
+        
+        const metaStr = '{' + metaMatch[1] + '}';
+        const meta = { url: null, deps: [] };
+        
+        const urlMatch = metaStr.match(/url\s*:\s*['"`]([^'"`]+)['"`]/);
+        if (urlMatch) meta.url = urlMatch[1];
+        
+        const depsMatch = metaStr.match(/deps\s*:\s*\[([^\]]*)\]/);
+        if (depsMatch) {
+            meta.deps = depsMatch[1]
+                .split(',')
+                .map(d => d.trim().replace(/['"`]/g, ''))
+                .filter(d => d);
+        }
+        
+        return meta;
+    } catch (error) {
+        return null;
+    }
 }
 
-
-    console.log('📦 Instalando...');
-    try {
-        const { stdout, stderr } = await execAsync('npm install', { cwd: __dirname });
+async function updateAdaptersAndPlugins() {
+    console.log(cristal('🔄 Actualizando adaptadores y plugins...\n'));
+    
+    const adaptersPath = path.join(__dirname, 'src', 'adapters');
+    const pluginsPath = path.join(__dirname, 'src', 'plugins');
+    
+    const allDeps = new Set();
+    let updatedCount = 0;
+    
+    for (const basePath of [adaptersPath, pluginsPath]) {
+        if (!existsSync(basePath)) continue;
         
-        console.log(cristal('✅ Dependencias Instaladas \n'));
+        const files = fs.readdirSync(basePath).filter(f => f.endsWith('.js'));
+        
+        for (const file of files) {
+            const filePath = path.join(basePath, file);
+            
+            try {
+                const content = fs.readFileSync(filePath, 'utf8');
+                const meta = extractABMetaInfo(content);
+                
+                if (!meta) continue;
+                
+                if (meta.url) {
+                    try {
+                        console.log(`  ⬇️  Descargando: ${file}`);
+                        const fetch = (await import('node-fetch')).default;
+                        const response = await fetch(meta.url);
+                        
+                        if (!response.ok) {
+                            console.log(`  ⚠️  Error descargando ${file}: ${response.statusText}`);
+                            continue;
+                        }
+                        
+                        const newContent = await response.text();
+                        fs.writeFileSync(filePath, newContent, 'utf8');
+                        console.log(`  ✅ Actualizado: ${file}`);
+                        updatedCount++;
+                    } catch (downloadError) {
+                        console.log(`  ⚠️  Error descargando ${file}: ${downloadError.message}`);
+                    }
+                }
+                
+                if (meta.deps && meta.deps.length > 0) {
+                    meta.deps.forEach(dep => allDeps.add(dep));
+                }
+                
+            } catch (error) {
+                console.log(`  ⚠️  Error procesando ${file}: ${error.message}`);
+            }
+        }
+    }
+    
+    console.log('');
+    
+    if (updatedCount > 0) {
+        console.log(cristal(`✅ ${updatedCount} archivo(s) actualizado(s)`));
+    } else {
+        console.log(cristal('ℹ️  No hay actualizaciones disponibles'));
+    }
+    
+    if (allDeps.size > 0) {
+        const depsArray = Array.from(allDeps);
+        console.log(cristal(`📦 Dependencias detectadas: ${depsArray.join(', ')}`));
+        return depsArray;
+    }
+    
+    return [];
+}
+
+async function cleanMediaFolder() {
+    const mediaFolder = process.env.MEDIA_FOLDER || path.join(__dirname, 'src', 'media');
+    
+    if (!existsSync(mediaFolder)) {
+        return;
+    }
+    
+    try {
+        const files = fs.readdirSync(mediaFolder);
+        
+        for (const file of files) {
+            const filePath = path.join(mediaFolder, file);
+            const stat = fs.statSync(filePath);
+            
+            if (stat.isDirectory()) {
+                fs.rmSync(filePath, { recursive: true, force: true });
+            } else {
+                fs.unlinkSync(filePath);
+            }
+        }
+        
+        console.log(cristal('🧹 Carpeta de medios limpiada'));
+    } catch (error) {
+        console.log(instagram(`⚠️  Error limpiando carpeta de medios: ${error.message}`));
+    }
+}
+
+async function installDependencies(additionalDeps = []) {
+    console.log('📡 Actualizando repositorio...\n');
+
+    try {
+        await execAsync('git pull', { cwd: __dirname });
+    } catch (error) {
+        console.error('❌ Error actualizando:', error.message);
+    }
+
+    console.log('📦 Instalando dependencias...');
+    
+    const allDeps = [...additionalDeps].filter((v, i, a) => a.indexOf(v) === i);
+    
+    const installCmd = allDeps.length > 0 
+        ? `npm install ${allDeps.join(' ')} --legacy-peer-deps --force`
+        : 'npm install --legacy-peer-deps --force';
+    
+    try {
+        const { stdout, stderr } = await execAsync(installCmd, { cwd: __dirname });
+        console.log(cristal('✅ Dependencias instaladas\n'));
         return true;
     } catch (error) {
         console.log(instagram('❌ Error instalando dependencias:', error.message));
@@ -205,8 +329,20 @@ async function startHandler() {
         const { default: handler } = await import('./src/core/handler.js');
         await handler(process.env);
     } catch (error) {
-        console.log(instagram('❌Error iniciando:', error));
+        console.log(instagram('❌ Error iniciando Adapter Handler:', error));
+        process.exit(1);
+    }
+}
+
+async function startPluginHandler() {
+    try {
+        const { default: PluginHandler } = await import('./src/core/pluginHandler.js');
+        const pluginHandler = new PluginHandler(process.env);
+        await pluginHandler.initialize();
         
+        return pluginHandler;
+    } catch (error) {
+        console.log(instagram('❌ Error iniciando Plugin Handler:', error));
         process.exit(1);
     }
 }
@@ -221,36 +357,54 @@ async function main() {
         }
         
         console.log('');
-        await installDependencies();
+        
+        await cleanMediaFolder();
+        
+        const dynamicDeps = await updateAdaptersAndPlugins();
+        
+        await installDependencies(dynamicDeps);
 
         process.title = 'AcopleBOT';
         process.stdout.write('\x1b]2;AcopleBOT\x07');
 
-        await startHandler();
+        await Promise.all([
+            startHandler(),
+            startPluginHandler()
+        ]);
         
     } catch (error) {
-        console.log(instagram('❌Error:', error));
+        console.log(instagram('❌ Error:', error));
         process.exit(1);
     }
 }
 
-process.on('SIGINT', () => {
-    console.log(instagram('\n🛑SIGINT Recibido, Cerrando...'));
+process.on('SIGINT', async () => {
+    console.log(instagram('\n🛑 SIGINT Recibido, Cerrando...'));
+    
+    if (global.pluginHandler) {
+        await global.pluginHandler.shutdown();
+    }
+    
     process.exit(0);
 });
 
-process.on('SIGTERM', () => {
-    console.log(instagram('\n🛑SIGTERM Recibido, Cerrando...'));
+process.on('SIGTERM', async () => {
+    console.log(instagram('\n🛑 SIGTERM Recibido, Cerrando...'));
+    
+    if (global.pluginHandler) {
+        await global.pluginHandler.shutdown();
+    }
+    
     process.exit(0);
 });
 
 process.on('uncaughtException', (error) => {
-    console.log(instagram('💥Solicitud Desconocida, Cerrando:', error));
+    console.log(instagram('💥 Solicitud Desconocida, Cerrando:', error));
     process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.log(instagram('💥Promise:', promise));
+    console.log(instagram('💥 Promise:', promise));
     console.log(instagram('Razón:', reason));
     process.exit(1);
 });

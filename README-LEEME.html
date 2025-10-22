@@ -63,12 +63,13 @@ Si una plataforma no es compatible solo pondra "null"
 
 
 Cada script debe tener
+const ABMetaInfo = () => {};
 ABMetaInfo({
-  pattern: 'echo ?(.*)', // en caso de ser plugin
+  pattern: 'echo ?(.*)', // (Solo Plugin) es el pattern a reaccionar del plugin, de esto se encarga pluginhandler para mandar.
   url: 'link' //para autoactualizar
-  sudo: false,
-  desc: 'Repite el mensaje',
-  type: 'utilidad',
+  sudo: false, // (Solo Plugin) de esto se encarga plugin handler para enviar la solicitud en caso de des plugin
+  desc: 'Repite el mensaje', // solo es para uso informativo
+  type: 'utilidad', // (Solo Plugin) solo es para uso informativo
   deps: ['cfonts', 'baileys@12.5'] // dependencias node
 })
 

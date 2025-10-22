@@ -6,11 +6,10 @@
     "dev": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.21.0",
+    "discord.js": "^14.23.2",
     "dotenv": "^16.0.3",
     "gradient-string": "^3.0.0",
-    "matrix-bot-sdk": "^0.7.1",
-    "matrix-js-sdk": "^37.12.0",
+    "node-fetch": "*",
     "node-telegram-bot-api": "^0.66.0",
     "redis": "^4.6.0"
   },
