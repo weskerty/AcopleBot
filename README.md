@@ -53,10 +53,12 @@ curl -fsSL https://raw.githubusercontent.com/weskerty/AcopleBot/refs/heads/maste
 
 Probado en ArchLinux y Termux.
 > [!IMPORTANT]
-> El tiempo de instalacion en termux varia dependiendo de las capacidades del dispositivo, Acepta todos los permisos y no salgas de la App hasta Terminar el Proceso.
+> # En Termux 
+El tiempo de instalacion en termux varia dependiendo de las capacidades del dispositivo, Acepta todos los permisos y no salgas de la App hasta Terminar el Proceso.
 
-> [!IMPORTANT]
-> Si el bot se cierra constantemente una vez iniciado, deberas seguir este Tutorial para Solucionar la Limitacion de Android:
+Si Termux se detiene constantemente deberas seguir este Tutorial para Solucionar la Limitacion de Android:
+https://gist.github.com/kairusds/1d4e32d3cf0d6ca44dc126c1a383a48d?permalink_comment_id=5287921#gistcomment-5287921
+
 
 # Configuracion
 Al iniciar se abrira un editor de texto, deberas agregar las variables ahi. 
