@@ -1,0 +1,21 @@
+{
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.23.2",
+    "dotenv": "^16.0.3",
+    "express": "^5.1.0",
+    "form-data": "^4.0.5",
+    "gradient-string": "^3.0.0",
+    "node-fetch": "^3.3.2",
+    "node-telegram-bot-api": "^0.66.0",
+    "redis": "^4.6.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

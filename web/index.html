@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AcopleBot 🌎</title>
+<link rel="stylesheet" href="./Themes/Simple.css">
+</head>
+<body>
+<div id="app">
+<div class="l">Conectando...</div>
+</div>
+
+<script>
+const API='http://localhost:3000/api';
+const WS='ws://localhost:3000';
+const USER_ID='web-user';
+let ws,chats=[],msgs=[],sel=null,reply=null,cto=0,mto=0,lastRead={};
+
+const $=(s,p=document)=>p.querySelector(s);
+const $$=(s,p=document)=>p.querySelectorAll(s);
+
+const fmt=(ts)=>{
+const d=new Date(ts);
+const t=d.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'});
+const dy=d.toLocaleDateString('es',{day:'2-digit',month:'short'});
+return `${dy} ${t}`;
+};
+
+const esc=(s)=>(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+const getColor=(id)=>{
+const colors=['#58a6ff','#3fb950','#d29922','#f85149','#bc8cff','#ff7b72','#79c0ff','#ffa657'];
+let h=0;
+for(let i=0;i<id.length;i++)h=id.charCodeAt(i)+((h<<5)-h);
+return colors[Math.abs(h)%colors.length];
+};
+
+const wsConnect=()=>{
+ws=new WebSocket(WS);
+ws.onopen=()=>console.log('WS conectado');
+ws.onmessage=(e)=>{
+const {type,data}=JSON.parse(e.data);
+if(type==='new_message'){
+const isInCurrentChat=sel&&(
+  (data.adapterId+':'+data.conversation?.id===sel)||
+  (sel.startsWith('REGLA_')&&data.conversation?.id)
+);
+if(isInCurrentChat){
+msgs.unshift(data);
+renderMsgs();
+}
+loadChats(0);
+}
+};
+ws.onerror=(e)=>console.error('WS error:',e);
+ws.onclose=()=>{
+console.log('WS cerrado, reconectando...');
+setTimeout(wsConnect,3000);
+};
+};
+
+const loadChats=async(o)=>{
+try{
+const r=await fetch(`${API}/chats?offset=${o}&limit=20&userId=${USER_ID}`);
+const {chats:c,total}=await r.json();
+if(o===0)chats=c;else chats.push(...c);
+renderChats();
+}catch(e){
+console.error('Error cargando chats:',e);
+}
+};
+
+const loadMsgs=async(cId,b=null)=>{
+try{
+const u=b?`${API}/chat/${cId}?before=${b}&limit=50`:`${API}/chat/${cId}?limit=50`;
+const r=await fetch(u);
+const {messages:m}=await r.json();
+if(!b){
+msgs=m;
+await loadLastRead(cId);
+scrollToUnread();
+}else{
+msgs.push(...m);
+}
+renderMsgs();
+}catch(e){
+console.error('Error cargando mensajes:',e);
+}
+};
+
+const loadLastRead=async(cId)=>{
+try{
+const r=await fetch(`${API}/lastRead?chatId=${cId}&userId=${USER_ID}`);
+const {timestamp}=await r.json();
+lastRead[cId]=timestamp||0;
+}catch(e){
+console.error('Error cargando lastRead:',e);
+lastRead[cId]=0;
+}
+};
+
+const scrollToUnread=()=>{
+setTimeout(()=>{
+const ml=$('.ml');
+if(!ml||msgs.length===0)return;
+const lastReadTime=lastRead[sel]||0;
+const firstUnread=msgs.find(m=>m.timestamp>lastReadTime);
+if(firstUnread){
+const elem=$(`[data-id="${firstUnread.universalId}"]`);
+if(elem){
+elem.scrollIntoView({behavior:'smooth',block:'center'});
+return;
+}
+}
+ml.scrollTop=ml.scrollHeight;
+},200);
+};
+
+const markRead=async(cId)=>{
+try{
+await fetch(`${API}/markRead`,{
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({chatId:cId,userId:USER_ID})
+});
+lastRead[cId]=Date.now();
+loadChats(0);
+}catch(e){
+console.error('Error marcando leído:',e);
+}
+};
+
+const sendMsg=async()=>{
+const inp=$('#mi');
+const txt=inp.value.trim();
+if(!txt||!sel)return;
+
+try{
+const r=await fetch(`${API}/send`,{
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({text:txt,chatId:sel,replyTo:reply?.universalId})
+});
+const {message}=await r.json();
+inp.value='';
+reply=null;
+renderReply();
+msgs.unshift(message);
+renderMsgs();
+await markRead(sel);
+}catch(e){
+console.error('Error enviando:',e);
+}
+};
+
+const renderChats=()=>{
+const sl=$('.sl');
+if(!sl)return;
+sl.innerHTML=chats.map(c=>{
+const badge=c.unread>0?`<span class="badge">${c.unread}</span>`:'';
+const platform=c.platform==='unified'?'Unificado':`${c.platform.toUpperCase()}`;
+return `
+<div class="si${sel===c.id?' a':''}" data-id="${c.id}">
+<div class="sn">
+<span class="sp ${c.platform==='unified'?'unified':''}">${platform}</span>
+${esc(c.name)}
+${badge}
+</div>
+<div class="st">${esc(c.lastText)}</div>
+</div>
+`;
+}).join('');
+
+$$('.si').forEach(e=>{
+e.onclick=async()=>{
+sel=e.dataset.id;
+msgs=[];
+reply=null;
+await loadMsgs(sel);
+await markRead(sel);
+renderChats();
+renderMsgs();
+};
+});
+
+sl.onscroll=()=>{
+if(sl.scrollTop+sl.clientHeight>=sl.scrollHeight-50){
+clearTimeout(cto);
+cto=setTimeout(()=>loadChats(chats.length),300);
+}
+};
+};
+
+const renderMsgs=()=>{
+const ml=$('.ml');
+if(!ml)return;
+
+if(msgs.length===0){
+ml.innerHTML='<div class="e">No hay mensajes</div>';
+return;
+}
+
+const currentChat=chats.find(c=>c.id===sel);
+const lastReadTime=lastRead[sel]||0;
+let unreadShown=false;
+
+ml.innerHTML=msgs.map((m,idx)=>{
+const isOwn=m.platform==='web'&&m.author.id==='web-user';
+const authorColor=getColor(m.author?.id||'unknown');
+const author=isOwn?'Web':`[${(m.platform||'').toUpperCase()}] ${esc(m.author?.displayName||'Unknown')}`;
+const rep=m.message?.replyTo?`
+<div class="mr">
+↩ <span style="color:${getColor(m.message.replyTo.author?.id||'unknown')}">${esc(m.message.replyTo.author?.displayName||'Unknown')}</span>: ${esc(m.message.replyTo.text||'')}
+</div>
+`:'';
+
+let unreadDiv='';
+if(!unreadShown&&m.timestamp>lastReadTime&&msgs[idx+1]&&msgs[idx+1].timestamp<=lastReadTime){
+unreadDiv='<div class="unread-line"><span>Mensajes no leídos</span></div>';
+unreadShown=true;
+}
+
+let mediaHTML='';
+if(m.attachments&&m.attachments.length>0){
+const att=m.attachments[0];
+const mediaPath=att.filePath?`/media/${att.filePath.split('/').pop()}`:'';
+if(att.type==='image'&&mediaPath){
+mediaHTML=`
+<div class="media">
+<img src="${mediaPath}" onclick="window.open(this.src,'_blank')" alt="Imagen">
+<a href="${mediaPath}" download class="dl">⬇</a>
+</div>`;
+}else if(att.type==='video'&&mediaPath){
+mediaHTML=`
+<div class="media">
+<video controls onclick="this.paused?this.play():this.pause()">
+<source src="${mediaPath}" type="${att.mimeType||'video/mp4'}">
+</video>
+<a href="${mediaPath}" download class="dl">⬇</a>
+</div>`;
+}else if((att.type==='audio'||att.type==='voice')&&mediaPath){
+mediaHTML=`
+<div class="audio">
+<audio controls>
+<source src="${mediaPath}" type="${att.mimeType||'audio/mpeg'}">
+</audio>
+<a href="${mediaPath}" download class="dl">⬇</a>
+</div>`;
+}else if(att.type==='document'&&mediaPath){
+mediaHTML=`
+<div class="doc">
+📄 ${esc(att.filename)}
+<a href="${mediaPath}" download class="dl">⬇</a>
+</div>`;
+}
+}
+
+return `
+${unreadDiv}
+<div class="mi${isOwn?' o':''}" data-id="${m.universalId}" ondblclick="replyTo('${m.universalId}')">
+<div class="ma" style="color:${authorColor}">${author}</div>
+${rep}
+${mediaHTML}
+<div class="mt">${esc(m.message?.text||'')}</div>
+<div class="md">${fmt(m.timestamp)}</div>
+</div>
+`;
+}).join('');
+
+ml.onscroll=()=>{
+if(ml.scrollTop===0){
+clearTimeout(mto);
+mto=setTimeout(()=>{
+const old=msgs[msgs.length-1]?.timestamp;
+if(old)loadMsgs(sel,old);
+},300);
+}else if(ml.scrollTop+ml.clientHeight>=ml.scrollHeight-10){
+markRead(sel);
+}
+};
+};
+
+const renderReply=()=>{
+const rf=$('#rf');
+if(!rf)return;
+rf.innerHTML=reply?`
+<div class="rb">
+↩ <span style="color:${getColor(reply.author?.id||'unknown')}">${esc(reply.author?.displayName||'Unknown')}</span>: ${esc((reply.message?.text||'').substring(0,50))}
+<button class="rx" onclick="reply=null;renderReply()">✕</button>
+</div>
+`:'';
+};
+
+window.replyTo=(id)=>{
+reply=msgs.find(m=>m.universalId===id);
+renderReply();
+$('#mi').focus();
+};
+
+const render=()=>{
+const currentChat=chats.find(c=>c.id===sel);
+let headerText='Selecciona un chat';
+if(currentChat){
+if(currentChat.isUnified&&currentChat.unifiedNames&&currentChat.unifiedNames.length>0){
+headerText=currentChat.unifiedNames.join(' · ');
+}else{
+headerText=currentChat.name;
+}
+}
+
+$('#app').innerHTML=`
+<div class="c">
+<aside class="s">
+<div class="sh">Chats</div>
+<div class="sl"></div>
+</aside>
+<main class="m">
+<div class="mh">${headerText}</div>
+<div class="ml"></div>
+<div id="rf"></div>
+<footer class="mf">
+<textarea id="mi" placeholder="Mensaje..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
+<button class="mfb" onclick="sendMsg()">Enviar</button>
+</footer>
+</main>
+</div>
+`;
+renderChats();
+renderMsgs();
+renderReply();
+};
+
+const init=async()=>{
+await loadChats(0);
+render();
+wsConnect();
+};
+
+init();
+</script>
+</body>
+</html>
