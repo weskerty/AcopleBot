@@ -13,13 +13,13 @@ https://github.com/user-attachments/assets/c4e59488-916f-4c54-9bec-b99c779660f2
 # Plugins
 Plugins MultiPlataforma y Extensible, Se pueden instalar mas plugins con el comando .plg
 
-`DLA` DonwLoadAll; una envoltura/Wrapper de [yt-dlp](https://github.com/yt-dlp/yt-dlp?tab=readme-ov-file#readme) que permite buscar y descargar todo lo que solicites como Videos de Tiktok, Instagram, etc.
+`DLA` DonwLoadAll; una envoltura de [yt-dlp](https://github.com/yt-dlp/yt-dlp?tab=readme-ov-file#readme) que permite buscar y descargar todo lo que solicites como Videos de Tiktok, Instagram, FB, YT, XVideos, etc, etc.
 
 `gq` Grooq; IA que puede transcribir audios, leer imagenes y demas cosas de IA
 
 `Dado` Envia un dado con numeracion aleatoria, Clon al emoji Dado de Telegram.
 
-`cmd` Controla el servidor donde esta alojado el bot a traves de CLI (Shell Remoto). Solo SUDOUSERS pueden usarlo.
+`cmd` Controlar el servidor (Shell Remoto). 
 
 
 ## En el futuro se espera agregar;
@@ -32,7 +32,8 @@ Plugins MultiPlataforma y Extensible, Se pueden instalar mas plugins con el coma
 - [ ]  SysInfo
 - [ ]  Detector de Virus (Subida archivo a VirusTotal)
 - [ ]  Buscador de Archivos Interno, Subida y Descarga desde Servidor
-- [ ]  Kick, Warn, Cambio de Imagen Unificado (llamada api)
+- [ ]  Kick, Warn, dlt, Cambio de Imagen Unificado (llamada api)
+- [x]  Visor de Clima 
 
 Puedes Contribuir añadiendo mas Plugins o[ Mejorando esta Aberracion de Codigo](https://github.com/weskerty/AcopleBot/pulls)
 

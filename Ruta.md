@@ -4,6 +4,7 @@ api ejecucion adaptadores para coandos como kick, cambiar imagen de grupo
 
 
 plugin handler worker.on('exit') ser agregado en cada plugin
+ver log de plugins como fallan, errores no capturados aparecen en log
 
 eliminar totalmente cola de ejecucion. Si no hay SUDO_USERS= el plugin .setvar debe funcionar con cualquiera, actualmente pluginhandler niega la ejecucion de .setvar si no hay ningun sudo, pero setvar debe funcionar especificamente para todos cuando no hay ningun sudo, ya que significa que esta en modo configuracion. Cuando ya existe la variable SUDO_USERS= ahi el pluginhanler vuelve a bloquear la ejecucion de setvar solo para sudo.
 
@@ -16,3 +17,11 @@ el pluginhanler tendra comando .menu que listara en un mensaje; todos los abmeta
 
 Basicamente; .menu estara integrados en pluginhandler
 De esta manera el .menu para que utilice la cache de abmetainfo del propio handlerplugin
+
+
+.gq falal texto largo
+.sysinfo falla imagen, no eliminar
+
+.s
+[DISCORD] 🔴 [DISCORD] Error enviando a Message content must be a string.
+[TELEGRAM] 🔴 [TELEGRAM] Error enviando a ETELEGRAM: 400 Bad Request: message text is empty

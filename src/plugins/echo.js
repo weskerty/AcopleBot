@@ -6,7 +6,7 @@ const ABMetaInfo = () => {};
 
 // Metadata del plugin
 ABMetaInfo({
-    pattern: 'echo ?(.*)',
+    pattern: 'e ?(.*)',
     url: '',
     sudo: false,
     desc: 'Repite el mensaje que envías',

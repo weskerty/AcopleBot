@@ -1,0 +1,415 @@
+import express from 'express';
+import {WebSocketServer} from 'ws';
+import http from 'http';
+import path from 'path';
+import {fileURLToPath} from 'url';
+import BaseAdapter from '../core/BaseAdapter.js';
+
+const __f=fileURLToPath(import.meta.url);
+const __d=path.dirname(__f);
+const E=process.env;
+const WID='web-1';
+const WP=Number(E.WEB_PORT||3000);
+
+class WebAdapter extends BaseAdapter{
+constructor(){
+super({adapterId:WID,platform:'web',token:'web-token'});
+this.app=express();
+this.srv=http.createServer(this.app);
+this.wss=new WebSocketServer({server:this.srv});
+this.C2={
+CP:'config:web:',
+CK:'history:global',
+ML:5000
+};
+}
+
+async init(){
+await this.initClients();
+console.log('[WEB] Redis conectado');
+await this.testRedis();
+this.setupRoutes();
+this.setupWS();
+this.srv.listen(WP,()=>console.log(`[WEB] Servidor en :${WP}`));
+process.on('SIGINT',async()=>{
+this.wss.close();
+await this.cleanup();
+});
+process.on('SIGTERM',async()=>{
+this.wss.close();
+await this.cleanup();
+});
+console.log(`[WEB] Ejecutando ${this.adapterId}`);
+}
+
+async testRedis(){
+try{
+const t=await this.indexClient.lLen(this.C2.CK);
+console.log(`[WEB] Mensajes en Redis: ${t}`);
+if(t>0){
+const sample=await this.indexClient.lRange(this.C2.CK,0,2);
+console.log(`[WEB] Sample (${sample.length} msgs):`,sample.map(s=>JSON.parse(s).platform));
+}
+}catch(e){
+console.error('[WEB] Error test Redis:',e);
+}
+}
+
+async LM(s,l){
+const t=await this.indexClient.lLen(this.C2.CK);
+console.log(`[WEB] LM: total=${t}, skip=${s}, limit=${l}`);
+if(t===0)return[];
+const st=Math.max(0,t-s-l);
+const ed=Math.max(0,t-s-1);
+console.log(`[WEB] Range: ${st} to ${ed}`);
+const m=await this.indexClient.lRange(this.C2.CK,st,ed);
+console.log(`[WEB] Loaded ${m.length} msgs`);
+return m.map(x=>JSON.parse(x)).reverse();
+}
+
+GU(aId,cId){
+for(const r of this.routingRules){
+const f=r.targets.find(t=>t.adapterId===aId&&t.chatId===cId);
+if(f)return r.ruleId;
+}
+return `${aId}:${cId}`;
+}
+
+GR(rId){
+const r=this.routingRules.find(r=>r.ruleId===rId);
+return r?r.targets:[];
+}
+
+GB(msgs){
+console.log(`[WEB] GB: processing ${msgs.length} msgs`);
+const g=new Map();
+msgs.forEach(m=>{
+if(!m.conversation?.id){
+console.log('[WEB] Skip msg without conversation.id');
+return;
+}
+const u=this.GU(m.adapterId,m.conversation.id);
+if(!g.has(u)){
+const isU=u.startsWith('REGLA_');
+const tg=isU?this.GR(u):[];
+g.set(u,{
+id:u,
+adapterId:m.adapterId,
+chatId:m.conversation.id,
+name:m.conversation.name||'Unknown',
+type:m.conversation.type||'unknown',
+platform:isU?'unified':m.platform,
+lastMsg:m.timestamp,
+lastText:m.message?.text||'',
+unread:0,
+messages:[],
+isUnified:isU,
+unifiedNames:isU?[]:null,
+targets:tg
+});
+}
+const c=g.get(u);
+c.messages.push(m);
+if(m.timestamp>c.lastMsg){
+c.lastMsg=m.timestamp;
+c.lastText=m.message?.text||'';
+}
+if(c.isUnified&&m.conversation.name){
+const n=`${m.conversation.name} (${m.platform.toUpperCase()})`;
+if(!c.unifiedNames.includes(n))c.unifiedNames.push(n);
+}
+});
+console.log(`[WEB] GB: created ${g.size} chats`);
+return Array.from(g.values()).sort((a,b)=>b.lastMsg-a.lastMsg);
+}
+
+async GC(o,l,uId='web-user'){
+console.log(`[WEB] GC: offset=${o}, limit=${l}, user=${uId}`);
+const t=await this.indexClient.lLen(this.C2.CK);
+const msgs=await this.LM(0,Math.min(t,this.C2.ML));
+console.log(`[WEB] GC: loaded ${msgs.length} msgs`);
+const chats=this.GB(msgs);
+console.log(`[WEB] GC: got ${chats.length} chats`);
+for(const c of chats){
+const lr=`${this.C2.CP}${uId}:lastRead:${c.id}`;
+const lv=await this.indexClient.get(lr);
+if(lv){
+c.unread=c.messages.filter(m=>m.timestamp>parseInt(lv)).length;
+}else{
+c.unread=c.messages.length;
+}
+}
+const pg=chats.slice(o,o+l);
+console.log(`[WEB] GC: returning ${pg.length} chats (page)`);
+return {chats:pg,total:chats.length};
+}
+
+async GH(cId,b,l){
+console.log(`[WEB] GH: chatId=${cId}, before=${b}, limit=${l}`);
+const t=await this.indexClient.lLen(this.C2.CK);
+const max=Math.min(t,this.C2.ML);
+const msgs=await this.LM(0,max);
+console.log(`[WEB] GH: loaded ${msgs.length} msgs`);
+const isU=cId.startsWith('REGLA_');
+let f;
+if(isU){
+const tg=this.GR(cId);
+console.log(`[WEB] GH: unified chat, targets=${tg.length}`);
+f=msgs.filter(m=>{
+if(!m.conversation?.id)return false;
+return tg.some(t=>t.adapterId===m.adapterId&&t.chatId===m.conversation.id);
+});
+}else{
+const[aId,chatId]=cId.split(':');
+console.log(`[WEB] GH: normal chat, adapterId=${aId}, chatId=${chatId}`);
+f=msgs.filter(m=>{
+if(!m.conversation?.id)return false;
+const cm=m.conversation.id===chatId;
+const am=m.adapterId===aId;
+const sc=cm&&(am||this.GU(m.adapterId,m.conversation.id)===cId);
+return sc;
+});
+}
+console.log(`[WEB] GH: filtered to ${f.length} msgs`);
+let r=f;
+if(b){
+const i=f.findIndex(m=>m.timestamp<b);
+if(i!==-1)r=f.slice(i,i+l);
+else r=[];
+}else{
+r=f.slice(-l);
+}
+console.log(`[WEB] GH: returning ${r.length} msgs`);
+return r;
+}
+
+async FM(uId){
+const t=await this.indexClient.lLen(this.C2.CK);
+const msgs=await this.LM(0,Math.min(t,this.C2.ML));
+return msgs.find(m=>m.universalId===uId);
+}
+
+async LLR(cId,uId){
+const k=`${this.C2.CP}${uId}:lastRead:${cId}`;
+const ts=await this.indexClient.get(k);
+return ts?parseInt(ts):0;
+}
+
+async MR(cId,uId){
+const k=`${this.C2.CP}${uId}:lastRead:${cId}`;
+await this.indexClient.set(k,Date.now().toString());
+}
+
+setupRoutes(){
+this.app.use('/media',express.static(path.join(__d,'../..','src','media')));
+this.app.use(express.static(path.join(__d,'../..','web')));
+this.app.use(express.json());
+
+this.app.get('/api/chats',async(req,res)=>{
+try{
+console.log('[WEB] GET /api/chats');
+const o=parseInt(req.query.offset||0);
+const l=parseInt(req.query.limit||20);
+const uId=req.query.userId||'web-user';
+const d=await this.GC(o,l,uId);
+console.log('[WEB] Sending response:',{chats:d.chats.length,total:d.total});
+res.json(d);
+}catch(e){
+console.error('[WEB] Error /api/chats:',e);
+res.status(500).json({error:e.message});
+}
+});
+
+this.app.get('/api/chat/:id',async(req,res)=>{
+try{
+console.log('[WEB] GET /api/chat/:id',req.params.id);
+const cId=req.params.id;
+const b=parseInt(req.query.before)||null;
+const l=parseInt(req.query.limit||50);
+const msgs=await this.GH(cId,b,l);
+console.log('[WEB] Sending messages:',msgs.length);
+res.json({messages:msgs});
+}catch(e){
+console.error('[WEB] Error /api/chat:',e);
+res.status(500).json({error:e.message});
+}
+});
+
+this.app.get('/api/lastRead',async(req,res)=>{
+try{
+const cId=req.query.chatId;
+const uId=req.query.userId||'web-user';
+if(!cId)return res.status(400).json({error:'chatId requerido'});
+const ts=await this.LLR(cId,uId);
+res.json({timestamp:ts});
+}catch(e){
+console.error('[WEB] Error /api/lastRead:',e);
+res.status(500).json({error:e.message});
+}
+});
+
+this.app.post('/api/send',async(req,res)=>{
+try{
+console.log('[WEB] POST /api/send',req.body);
+const{text,chatId,replyTo}=req.body;
+if(!text||!chatId)return res.status(400).json({error:'text y chatId requeridos'});
+const msg=await this.CM(text,chatId,replyTo);
+await this.publishEvent(msg,this.C.EVENTS.MESSAGE);
+console.log('[WEB] Message published');
+res.json({success:true,message:msg});
+}catch(e){
+console.error('[WEB] Error /api/send:',e);
+res.status(500).json({error:e.message});
+}
+});
+
+this.app.post('/api/markRead',async(req,res)=>{
+try{
+const{chatId,userId='web-user'}=req.body;
+if(!chatId)return res.status(400).json({error:'chatId requerido'});
+await this.MR(chatId,userId);
+res.json({success:true});
+}catch(e){
+console.error('[WEB] Error /api/markRead:',e);
+res.status(500).json({error:e.message});
+}
+});
+}
+
+setupWS(){
+this.wss.on('connection',(ws)=>{
+console.log('[WEB] Cliente WS conectado');
+ws.on('message',async(data)=>{
+try{
+const{type,payload}=JSON.parse(data);
+console.log('[WEB] WS message:',type);
+if(type==='send_message'){
+const{text,chatId,replyTo}=payload;
+const msg=await this.CM(text,chatId,replyTo);
+await this.publishEvent(msg,this.C.EVENTS.MESSAGE);
+ws.send(JSON.stringify({type:'sent',data:msg}));
+}
+}catch(e){
+console.error('[WEB] Error WS message:',e);
+ws.send(JSON.stringify({type:'error',error:e.message}));
+}
+});
+ws.on('close',()=>console.log('[WEB] Cliente WS desconectado'));
+ws.on('error',(e)=>console.error('[WEB] Error WS:',e));
+});
+}
+
+async setupGlobalSubscriber(){
+console.log('[WEB] Setting up subscriber');
+await this.subscriberClient.subscribe(this.C.CHANNEL,async(msgStr)=>{
+try{
+const msg=JSON.parse(msgStr);
+console.log('[WEB] New msg from channel:',msg.platform,msg.adapterId);
+this.wss.clients.forEach(c=>{
+if(c.readyState===1){
+c.send(JSON.stringify({type:'new_message',data:msg}));
+}
+});
+if(msg.author?.bot===true&&!msg.isPluginResponse)return;
+const tg=this.getTargetsForMessage(msg);
+for(const t of tg){
+const src=`${msg.adapterId}:${msg.conversation.id}${msg.thread?.id?`/${msg.thread.id}`:''}`;
+const dst=`${t.adapterId}:${t.chatId}${t.threadId?`/${t.threadId}`:''}`;
+if(src===dst&&!msg.isPluginResponse)continue;
+await this.sendToTarget(msg,t);
+}
+}catch(e){
+console.error('[WEB] Error subscriber:',e);
+}
+});
+console.log('[WEB] Subscriber ready');
+}
+
+async CM(txt,cId,rId){
+console.log(`[WEB] CM: text=${txt.substring(0,20)}, chatId=${cId}`);
+let aId,chatId;
+if(cId.startsWith('REGLA_')){
+const tg=this.GR(cId);
+const wt=tg.find(t=>t.direction==='in'||t.direction==='inout');
+if(wt){
+aId=wt.adapterId;
+chatId=wt.chatId;
+}else{
+aId=tg[0].adapterId;
+chatId=tg[0].chatId;
+}
+}else{
+[aId,chatId]=cId.split(':');
+}
+console.log(`[WEB] CM: target adapterId=${aId}, chatId=${chatId}`);
+let rTo=null;
+if(rId){
+const o=await this.FM(rId);
+if(o){
+rTo={
+messageId:o.message?.id||'',
+universalId:o.universalId,
+text:(o.message?.text||'').substring(0,100),
+author:o.author
+};
+}
+}
+const msgs=await this.LM(0,100);
+const cm=msgs.filter(m=>m.conversation?.id&&m.adapterId===aId&&m.conversation.id===chatId);
+const lc=cm[0];
+return {
+text:txt,
+chatId:chatId,
+adapterId:aId,
+replyTo:rTo,
+lastChat:lc
+};
+}
+
+async createUniversalMessage(ev,eT,ex={}){
+console.log(`[WEB] createUniversalMessage: type=${eT}`);
+const msg=this.createBaseMessage(ev,eT,{
+server:{id:null,name:null},
+conversation:{
+id:ev.chatId||'unknown',
+name:ex.lastChat?.conversation?.name||'Unknown',
+type:ex.lastChat?.conversation?.type||'unknown'
+},
+thread:{id:null,name:null},
+author:{
+id:'webUser',
+username:'Web',
+displayName:'Web',
+avatarUrl:null,
+avatarPath:null,
+bot:false
+}
+});
+if([this.C.EVENTS.MESSAGE].includes(eT)){
+msg.message={
+id:ex.messageId||'',
+text:ev.text||'',
+textFormatted:null,
+replyTo:ev.replyTo||null,
+edited:false,
+pinned:false
+};
+}
+console.log('[WEB] Created universal message:',msg.universalId);
+return msg;
+}
+
+async sendMessage(chatId,threadId,text,atts,rTo,apiCall){
+console.log(`[WEB] sendMessage called (no-op)`);
+return null;
+}
+
+setupEventHandlers(){
+console.log('[WEB] setupEventHandlers (no-op)');
+}
+}
+
+(async()=>{
+const a=new WebAdapter();
+await a.init();
+})().catch(console.error);

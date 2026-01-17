@@ -16,10 +16,10 @@ ABMetaInfo({
 
 const CFG = {
     K: process.env.GROQ_API_KEY,
-    M: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-    S: process.env.GROQ_SYSTEM_MSG || 'Eres un asistente útil.',
-    I: process.env.GROQ_IMAGE_MODEL || 'llama-3.2-90b-vision-preview',
-    A: process.env.GROQ_AUDIO_MODEL || 'whisper-large-v3'
+    M: process.env.GROQ_MODEL || 'meta-llama/llama-4-maverick-17b-128e-instruct',
+    I: process.env.GROQ_IMAGE_MODEL || 'meta-llama/llama-4-maverick-17b-128e-instruct',
+    A: process.env.GROQ_AUDIO_MODEL || 'whisper-large-v3',
+        S: process.env.GROQ_SYSTEM_MSG || 'Eres Acople Bot multi plataforma. Se breve.'
 };
 
 const apiCall = async (url, method, headers, body, retries = 3) => {

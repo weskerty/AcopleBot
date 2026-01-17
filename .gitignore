@@ -8,11 +8,14 @@ Extras/DatosPlugins/
 dump.rdb
 
 #PluginsExternos
-src/MyPlugins
+src/plugins/MyPlugins/
+
+#Adaptadores Propios
+src/adapters/MyAdapters/
 
 
-
-
+#WaWebJs
+.wwebjs_cache
 
 
 package-lock.json

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AcopleBot ðŸŒŽ</title>
+<title>AcopleBot ”9±4</title>
 <link rel="stylesheet" href="./Themes/Simple.css">
 </head>
 <body>
@@ -12,8 +12,8 @@
 </div>
 
 <script>
-const API='http://localhost:3000/api';
-const WS='ws://localhost:3000';
+const API='/api';
+const WS_URL=`ws://${window.location.host}`;
 const USER_ID='web-user';
 let ws,chats=[],msgs=[],sel=null,reply=null,cto=0,mto=0,lastRead={};
 
@@ -37,20 +37,28 @@ return colors[Math.abs(h)%colors.length];
 };
 
 const wsConnect=()=>{
-ws=new WebSocket(WS);
+console.log('Conectando WS a:',WS_URL);
+ws=new WebSocket(WS_URL);
 ws.onopen=()=>console.log('WS conectado');
 ws.onmessage=(e)=>{
-const {type,data}=JSON.parse(e.data);
-if(type==='new_message'){
+try{
+const data=JSON.parse(e.data);
+console.log('WS message:',data.type);
+if(data.type==='new_message'){
+const msg=data.data;
 const isInCurrentChat=sel&&(
-  (data.adapterId+':'+data.conversation?.id===sel)||
-  (sel.startsWith('REGLA_')&&data.conversation?.id)
+(msg.adapterId+':'+msg.conversation?.id===sel)||
+(sel.startsWith('REGLA_')&&msg.conversation?.id)
 );
 if(isInCurrentChat){
-msgs.unshift(data);
+msgs.unshift(msg);
 renderMsgs();
+scrollToBottom();
 }
 loadChats(0);
+}
+}catch(err){
+console.error('Error parsing WS message:',err);
 }
 };
 ws.onerror=(e)=>console.error('WS error:',e);
@@ -62,9 +70,13 @@ setTimeout(wsConnect,3000);
 
 const loadChats=async(o)=>{
 try{
+console.log('Loading chats, offset:',o);
 const r=await fetch(`${API}/chats?offset=${o}&limit=20&userId=${USER_ID}`);
-const {chats:c,total}=await r.json();
+const json=await r.json();
+console.log('Chats response:',json);
+const {chats:c,total}=json;
 if(o===0)chats=c;else chats.push(...c);
+console.log('Total chats:',chats.length);
 renderChats();
 }catch(e){
 console.error('Error cargando chats:',e);
@@ -73,9 +85,12 @@ console.error('Error cargando chats:',e);
 
 const loadMsgs=async(cId,b=null)=>{
 try{
+console.log('Loading msgs for chat:',cId,'before:',b);
 const u=b?`${API}/chat/${cId}?before=${b}&limit=50`:`${API}/chat/${cId}?limit=50`;
 const r=await fetch(u);
-const {messages:m}=await r.json();
+const json=await r.json();
+console.log('Messages response:',json);
+const {messages:m}=json;
 if(!b){
 msgs=m;
 await loadLastRead(cId);
@@ -83,6 +98,7 @@ scrollToUnread();
 }else{
 msgs.push(...m);
 }
+console.log('Total msgs:',msgs.length);
 renderMsgs();
 }catch(e){
 console.error('Error cargando mensajes:',e);
@@ -98,6 +114,13 @@ lastRead[cId]=timestamp||0;
 console.error('Error cargando lastRead:',e);
 lastRead[cId]=0;
 }
+};
+
+const scrollToBottom=()=>{
+setTimeout(()=>{
+const ml=$('.ml');
+if(ml)ml.scrollTop=ml.scrollHeight;
+},50);
 };
 
 const scrollToUnread=()=>{
@@ -127,7 +150,7 @@ body:JSON.stringify({chatId:cId,userId:USER_ID})
 lastRead[cId]=Date.now();
 loadChats(0);
 }catch(e){
-console.error('Error marcando leÃ­do:',e);
+console.error('Error marcando le¨ªdo:',e);
 }
 };
 
@@ -137,17 +160,20 @@ const txt=inp.value.trim();
 if(!txt||!sel)return;
 
 try{
+console.log('Sending message:',txt);
 const r=await fetch(`${API}/send`,{
 method:'POST',
 headers:{'Content-Type':'application/json'},
 body:JSON.stringify({text:txt,chatId:sel,replyTo:reply?.universalId})
 });
 const {message}=await r.json();
+console.log('Message sent:',message);
 inp.value='';
 reply=null;
 renderReply();
 msgs.unshift(message);
 renderMsgs();
+scrollToBottom();
 await markRead(sel);
 }catch(e){
 console.error('Error enviando:',e);
@@ -155,6 +181,7 @@ console.error('Error enviando:',e);
 };
 
 const renderChats=()=>{
+console.log('Rendering chats:',chats.length);
 const sl=$('.sl');
 if(!sl)return;
 sl.innerHTML=chats.map(c=>{
@@ -174,6 +201,7 @@ ${badge}
 
 $$('.si').forEach(e=>{
 e.onclick=async()=>{
+console.log('Chat selected:',e.dataset.id);
 sel=e.dataset.id;
 msgs=[];
 reply=null;
@@ -193,6 +221,7 @@ cto=setTimeout(()=>loadChats(chats.length),300);
 };
 
 const renderMsgs=()=>{
+console.log('Rendering messages:',msgs.length);
 const ml=$('.ml');
 if(!ml)return;
 
@@ -206,30 +235,30 @@ const lastReadTime=lastRead[sel]||0;
 let unreadShown=false;
 
 ml.innerHTML=msgs.map((m,idx)=>{
-const isOwn=m.platform==='web'&&m.author.id==='web-user';
+const isOwn=m.platform==='web'&&m.author.id==='webUser';
 const authorColor=getColor(m.author?.id||'unknown');
 const author=isOwn?'Web':`[${(m.platform||'').toUpperCase()}] ${esc(m.author?.displayName||'Unknown')}`;
 const rep=m.message?.replyTo?`
 <div class="mr">
-â†© <span style="color:${getColor(m.message.replyTo.author?.id||'unknown')}">${esc(m.message.replyTo.author?.displayName||'Unknown')}</span>: ${esc(m.message.replyTo.text||'')}
+6È9„1‚5 <span style="color:${getColor(m.message.replyTo.author?.id||'unknown')}">${esc(m.message.replyTo.author?.displayName||'Unknown')}</span>: ${esc(m.message.replyTo.text||'')}
 </div>
 `:'';
 
 let unreadDiv='';
 if(!unreadShown&&m.timestamp>lastReadTime&&msgs[idx+1]&&msgs[idx+1].timestamp<=lastReadTime){
-unreadDiv='<div class="unread-line"><span>Mensajes no leÃ­dos</span></div>';
+unreadDiv='<div class="unread-line"><span>Mensajes no le¨ªdos</span></div>';
 unreadShown=true;
 }
 
 let mediaHTML='';
 if(m.attachments&&m.attachments.length>0){
 const att=m.attachments[0];
-const mediaPath=att.filePath?`/media/${att.filePath.split('/').pop()}`:'';
+const mediaPath=att.filePath?`/media/${att.filePath.split('src/media/')[1]||att.filePath.split('/').pop()}`:'';
 if(att.type==='image'&&mediaPath){
 mediaHTML=`
 <div class="media">
 <img src="${mediaPath}" onclick="window.open(this.src,'_blank')" alt="Imagen">
-<a href="${mediaPath}" download class="dl">â¬‡</a>
+<a href="${mediaPath}" download class="dl">8¤9„1‚5</a>
 </div>`;
 }else if(att.type==='video'&&mediaPath){
 mediaHTML=`
@@ -237,7 +266,7 @@ mediaHTML=`
 <video controls onclick="this.paused?this.play():this.pause()">
 <source src="${mediaPath}" type="${att.mimeType||'video/mp4'}">
 </video>
-<a href="${mediaPath}" download class="dl">â¬‡</a>
+<a href="${mediaPath}" download class="dl">8¤9„1‚5</a>
 </div>`;
 }else if((att.type==='audio'||att.type==='voice')&&mediaPath){
 mediaHTML=`
@@ -245,13 +274,13 @@ mediaHTML=`
 <audio controls>
 <source src="${mediaPath}" type="${att.mimeType||'audio/mpeg'}">
 </audio>
-<a href="${mediaPath}" download class="dl">â¬‡</a>
+<a href="${mediaPath}" download class="dl">8¤9„1‚5</a>
 </div>`;
 }else if(att.type==='document'&&mediaPath){
 mediaHTML=`
 <div class="doc">
-ðŸ“„ ${esc(att.filename)}
-<a href="${mediaPath}" download class="dl">â¬‡</a>
+”9Ý0 ${esc(att.filename)}
+<a href="${mediaPath}" download class="dl">8¤9„1‚5</a>
 </div>`;
 }
 }
@@ -286,8 +315,8 @@ const rf=$('#rf');
 if(!rf)return;
 rf.innerHTML=reply?`
 <div class="rb">
-â†© <span style="color:${getColor(reply.author?.id||'unknown')}">${esc(reply.author?.displayName||'Unknown')}</span>: ${esc((reply.message?.text||'').substring(0,50))}
-<button class="rx" onclick="reply=null;renderReply()">âœ•</button>
+6È9„1‚5 <span style="color:${getColor(reply.author?.id||'unknown')}">${esc(reply.author?.displayName||'Unknown')}</span>: ${esc((reply.message?.text||'').substring(0,50))}
+<button class="rx" onclick="reply=null;renderReply()">7½9</button>
 </div>
 `:'';
 };
@@ -303,7 +332,7 @@ const currentChat=chats.find(c=>c.id===sel);
 let headerText='Selecciona un chat';
 if(currentChat){
 if(currentChat.isUnified&&currentChat.unifiedNames&&currentChat.unifiedNames.length>0){
-headerText=currentChat.unifiedNames.join(' Â· ');
+headerText=currentChat.unifiedNames.join(' ¡¤ ');
 }else{
 headerText=currentChat.name;
 }
@@ -332,6 +361,7 @@ renderReply();
 };
 
 const init=async()=>{
+console.log('Initializing...');
 await loadChats(0);
 render();
 wsConnect();

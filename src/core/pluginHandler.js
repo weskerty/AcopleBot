@@ -13,17 +13,17 @@ class PluginHandler {
     this.envVars = envVars;
     this.pluginMeta = new Map();
     this.activeWorkers = new Map();
-    this.workerQueue = [];
     this.pluginsPath = path.join(__dirname, '..', 'plugins');
-    this.prefix = envVars.PREFIX || '.';
-    this.sudoUsers = (envVars.SUDO_USERS || '').split(',').map(u => u.trim()).filter(u => u);
+    
+    const prefixValue = envVars.PREFIX || process.env.PREFIX || '.';
+    this.prefix = (typeof prefixValue === 'string' && prefixValue.trim().length > 0 && prefixValue.trim().length < 10) ? prefixValue.trim() : '.';
+    
+    this.sudoUsers = ((envVars.SUDO_USERS || process.env.SUDO_USERS || '')).split(',').map(u => u.trim()).filter(u => u);
     this.routingRules = this.loadRules();
     this.redisClient = null;
     this.subscriberClient = null;
-    this.historyClient = null;
     this.watcher = null;
     this.reloadDebounce = new Map();
-    this.maxConcurrentWorkers = 5;
   }
 
   loadRules() {
@@ -41,8 +41,8 @@ class PluginHandler {
           const [, aId, cId, dir] = t.split(':');
           rule.targets.push({
             adapterId: aId.trim(),
-                            chatId: cId.trim(),
-                            direction: dir.trim()
+            chatId: cId.trim(),
+            direction: dir.trim()
           });
         } else {
           const seg = t.split(':');
@@ -69,17 +69,17 @@ class PluginHandler {
 
   isInRuledChat(adapterId, chatId) {
     return this.routingRules.some(rule =>
-    rule.targets.some(t =>
-    t.adapterId === adapterId && t.chatId === chatId
-    )
+      rule.targets.some(t =>
+        t.adapterId === adapterId && t.chatId === chatId
+      )
     );
   }
 
   async initialize() {
-    console.log('ðŸ”Œ Inicializando Plugin Handler...');
-    console.log('ðŸ“ Ruta:', this.pluginsPath);
-    console.log('âš™ï¸  Prefijo:', this.prefix);
-    console.log('ðŸ‘‘ SUDO:', this.sudoUsers.length > 0 ? this.sudoUsers.join(', ') : 'Ninguno');
+    console.log('”9ä2 Inicializando Plugin Handler...');
+    console.log('”9Ü7 Ruta:', this.pluginsPath);
+    console.log('7±5„1‚5  Prefijo:', this.prefix);
+    console.log('”9Ñ5 SUDO:', this.sudoUsers.length > 0 ? this.sudoUsers.join(', ') : 'Ninguno');
     console.log('');
 
     if (!fs.existsSync(this.pluginsPath)) {
@@ -91,31 +91,30 @@ class PluginHandler {
     await this.subscribeToMessages();
     this.setupHotReload();
 
-    console.log(`âœ… Plugin Handler inicializado con ${this.pluginMeta.size} plugin(s)\n`);
+    console.log(`7¼3 Plugin Handler inicializado con ${this.pluginMeta.size} plugin(s)\n`);
   }
 
   async initializeRedis() {
     const host = this.envVars.VALKEY_HOST || 'localhost';
     const port = Number(this.envVars.VALKEY_PORT || 6379);
 
-    this.redisClient = redis.createClient({
-      socket: { host, port, reconnectStrategy: r => r > 10 ? new Error('Max retries') : Math.min(100 * r, 3000) }
-    });
-    this.subscriberClient = redis.createClient({
-      socket: { host, port, reconnectStrategy: r => r > 10 ? new Error('Max retries') : Math.min(100 * r, 3000) }
-    });
-    this.historyClient = redis.createClient({
-      socket: { host, port, reconnectStrategy: r => r > 10 ? new Error('Max retries') : Math.min(100 * r, 3000) }
-    });
+    const cfg = {
+      socket: { 
+        host, 
+        port, 
+        reconnectStrategy: r => r > 10 ? new Error('Max retries') : Math.min(100 * r, 3000) 
+      }
+    };
+
+    this.redisClient = redis.createClient(cfg);
+    this.subscriberClient = redis.createClient(cfg);
 
     this.redisClient.on('error', e => console.error('[PLUGINS] Redis Error:', e));
     this.subscriberClient.on('error', e => console.error('[PLUGINS] Redis Subscriber Error:', e));
-    this.historyClient.on('error', e => console.error('[PLUGINS] Redis History Error:', e));
 
     await Promise.all([
       this.redisClient.connect(),
-                      this.subscriberClient.connect(),
-                      this.historyClient.connect()
+      this.subscriberClient.connect()
     ]);
   }
 
@@ -168,11 +167,11 @@ class PluginHandler {
     const files = fs.readdirSync(this.pluginsPath).filter(f => f.endsWith('.js'));
 
     if (files.length === 0) {
-      console.log('[PLUGINS] âš ï¸  No se encontraron plugins');
+      console.log('[PLUGINS] 7²2„1‚5  No se encontraron plugins');
       return;
     }
 
-    console.log(`[PLUGINS] ðŸ“¦ ${files.length} plugin(s) encontrado(s):`);
+    console.log(`[PLUGINS] ”9à4 ${files.length} plugin(s) encontrado(s):`);
 
     for (const file of files) {
       await this.loadPluginMeta(path.join(this.pluginsPath, file));
@@ -190,265 +189,252 @@ class PluginHandler {
       if (!metaMatch) return;
 
       const meta = this.parseMetaInfo('{' + metaMatch[1] + '}');
-    if (!meta.pattern) return;
+      if (!meta.pattern) return;
 
-    const pattern = new RegExp(`^${this.escapeRegex(this.prefix)}${meta.pattern}$`, 'i');
+      const pattern = new RegExp(`^${this.escapeRegex(this.prefix)}${meta.pattern}$`, 'i');
 
-    this.pluginMeta.set(pluginName, {
-      name: pluginName,
-      filePath,
-      pattern,
-      rawPattern: meta.pattern,
-      meta
-    });
+      this.pluginMeta.set(pluginName, {
+        name: pluginName,
+        filePath,
+        pattern,
+        rawPattern: meta.pattern,
+        meta
+      });
 
-    const sudoTag = meta.sudo ? 'ðŸ”’ [SUDO]' : '';
-    console.log(`[PLUGINS]   âœ… ${pluginName} â†’ ${this.prefix}${meta.pattern} ${sudoTag}`);
-  } catch (error) {
-    console.error(`[PLUGINS] âŒ Error cargando ${path.basename(filePath)}:`, error.message);
-  }
-}
-
-escapeRegex(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-parseMetaInfo(str) {
-  const meta = { pattern: '', url: '', sudo: false, desc: '', type: 'utilidad', deps: [] };
-
-  const pattern = str.match(/pattern\s*:\s*['"`]([^'"`]+)['"`]/);
-  if (pattern) meta.pattern = pattern[1];
-
-  const url = str.match(/url\s*:\s*['"`]([^'"`]+)['"`]/);
-  if (url) meta.url = url[1];
-
-  const sudo = str.match(/sudo\s*:\s*(true|false)/);
-  if (sudo) meta.sudo = sudo[1] === 'true';
-
-  const desc = str.match(/desc\s*:\s*['"`]([^'"`]+)['"`]/);
-  if (desc) meta.desc = desc[1];
-
-  const type = str.match(/type\s*:\s*['"`]([^'"`]+)['"`]/);
-  if (type) meta.type = type[1];
-
-  const deps = str.match(/deps\s*:\s*\[([^\]]*)\]/);
-  if (deps) {
-    meta.deps = deps[1].split(',').map(d => d.trim().replace(/['"`]/g, '')).filter(d => d);
-  }
-
-  return meta;
-}
-
-async subscribeToMessages() {
-  await this.subscriberClient.subscribe('bot.On.AdaptadorMessage', async (msg) => {
-    try {
-      const data = JSON.parse(msg);
-      if (data.eventType === 'message' && data.author?.bot !== true && data.message?.text) {
-        await this.handleMessage(data);
-      }
+      const sudoTag = meta.sudo ? '”9ä8 [SUDO]' : '';
+      console.log(`[PLUGINS]   7¼3 ${pluginName} ¡ú ${this.prefix}${meta.pattern} ${sudoTag}`);
     } catch (error) {
-      console.error('[PLUGINS] âŒ Error procesando mensaje:', error.message);
+      console.error(`[PLUGINS] 7Ã4 Error cargando ${path.basename(filePath)}:`, error.message);
     }
-  });
-}
+  }
 
-async handleMessage(message) {
-  const text = message.message.text.trim();
-  if (!text.startsWith(this.prefix)) return;
+  escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
 
-  for (const [name, plugin] of this.pluginMeta) {
-    const match = text.match(plugin.pattern);
-    if (!match) continue;
+  parseMetaInfo(str) {
+    const meta = { pattern: '', url: '', sudo: false, desc: '', type: 'utilidad', deps: [] };
 
-    const userId = message.author.id;
-    const adapterId = message.adapterId;
-    const chatId = message.conversation.id;
-    const args = match[1] !== undefined ? match[1].trim() : '';
+    const pattern = str.match(/pattern\s*:\s*['"`]([^'"`]+)['"`]/);
+    if (pattern) meta.pattern = pattern[1];
 
-    const hasSudoConfig = this.sudoUsers.length > 0;
-    const isSudoUser = this.sudoUsers.includes(userId);
-    const isRuledChat = this.isInRuledChat(adapterId, chatId);
-    const isSetVar = name === 'setvar';
+    const url = str.match(/url\s*:\s*['"`]([^'"`]+)['"`]/);
+    if (url) meta.url = url[1];
 
-    let allowed = false;
+    const sudo = str.match(/sudo\s*:\s*(true|false)/);
+    if (sudo) meta.sudo = sudo[1] === 'true';
 
-    if (!hasSudoConfig && isSetVar) {
-      allowed = true;
-    } else if (hasSudoConfig) {
-      if (plugin.meta.sudo) {
-        allowed = isSudoUser;
-      } else {
-        allowed = isRuledChat || isSudoUser;
+    const desc = str.match(/desc\s*:\s*['"`]([^'"`]+)['"`]/);
+    if (desc) meta.desc = desc[1];
+
+    const type = str.match(/type\s*:\s*['"`]([^'"`]+)['"`]/);
+    if (type) meta.type = type[1];
+
+    const deps = str.match(/deps\s*:\s*\[([^\]]*)\]/);
+    if (deps) {
+      meta.deps = deps[1].split(',').map(d => d.trim().replace(/['"`]/g, '')).filter(d => d);
+    }
+
+    return meta;
+  }
+
+  async subscribeToMessages() {
+    await this.subscriberClient.subscribe('bot.On.AdaptadorMessage', async (msg) => {
+      try {
+        const data = JSON.parse(msg);
+        if (data.eventType === 'message' && data.author?.bot !== true && data.message?.text) {
+          await this.handleMessage(data);
+        }
+      } catch (error) {
+        console.error('[PLUGINS] 7Ã4 Error procesando mensaje:', error.message);
       }
-    } else {
-      allowed = false;
-    }
+    });
+  }
 
-    if (!allowed) {
-      console.log(`${userId} negado a ${name} con "${args}"`);
+  async handleMessage(message) {
+    const text = message.message.text.trim();
+    if (!text.startsWith(this.prefix)) return;
+
+    for (const [name, plugin] of this.pluginMeta) {
+      const match = text.match(plugin.pattern);
+      if (!match) continue;
+
+      const userId = message.author.id;
+      const adapterId = message.adapterId;
+      const chatId = message.conversation.id;
+      const args = match[1] !== undefined ? match[1].trim() : '';
+
+      const hasSudoConfig = this.sudoUsers.length > 0;
+      const isSudoUser = this.sudoUsers.includes(userId);
+      const isRuledChat = this.isInRuledChat(adapterId, chatId);
+      const isSetVar = name === 'setvar';
+
+      let allowed = false;
+
+      if (!hasSudoConfig && isSetVar) {
+        allowed = true;
+      } else if (hasSudoConfig) {
+        if (plugin.meta.sudo) {
+          allowed = isSudoUser;
+        } else {
+          allowed = isRuledChat || isSudoUser;
+        }
+      } else {
+        allowed = false;
+      }
+
+      if (!allowed) {
+        console.log(`${userId} negado a ${name} con "${args}"`);
+        return;
+      }
+
+      console.log(`${userId} ejecuto ${name} con "${args}"`);
+
+      const worker = await this.getOrCreateWorker(name, plugin);
+      const fullContext = await this.getFullContext(message);
+
+      worker.postMessage({
+        message,
+        args,
+        fullContext
+      });
+
       return;
     }
+  }
 
-    console.log(`${userId} ejecuto ${name} con "${args}"`);
+  async getOrCreateWorker(pluginName, plugin) {
+    if (this.activeWorkers.has(pluginName)) {
+      return this.activeWorkers.get(pluginName);
+    }
 
-    const worker = await this.getOrCreateWorker(name, plugin);
-    const fullContext = await this.getFullContext(message);
+    const worker = new Worker(plugin.filePath, { env: this.envVars });
 
-    worker.postMessage({
-      message,
-      args,
-      fullContext
+    worker.on('message', msg => this.handleWorkerMessage(pluginName, msg));
+    worker.on('error', err => console.error(`[PLUGINS] 7Ã4 Error en worker ${pluginName}:`, err));
+    worker.on('exit', code => {
+      this.activeWorkers.delete(pluginName);
+      if (code !== 0) {
+        console.error(`[PLUGINS] 7Ã4 Worker ${pluginName} termin¨® con c¨®digo ${code}`);
+      }
     });
 
-    return;
-  }
-}
+    this.activeWorkers.set(pluginName, worker);
 
-async getOrCreateWorker(pluginName, plugin) {
-  if (this.activeWorkers.has(pluginName)) {
-    return this.activeWorkers.get(pluginName);
+    return worker;
   }
 
-  while (this.activeWorkers.size >= this.maxConcurrentWorkers) {
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-
-  const worker = new Worker(plugin.filePath, { env: this.envVars });
-
-  worker.on('message', msg => this.handleWorkerMessage(pluginName, msg));
-  worker.on('error', err => console.error(`[PLUGINS] âŒ Error en worker ${pluginName}:`, err));
-  worker.on('exit', code => {
-    this.activeWorkers.delete(pluginName);
-    if (code !== 0) {
-      console.error(`[PLUGINS] âŒ Worker ${pluginName} terminÃ³ con cÃ³digo ${code}`);
-    }
-  });
-
-  this.activeWorkers.set(pluginName, worker);
-
-  return worker;
-}
-
-async getFullContext(message) {
-  try {
-    if (message.message?.replyTo?.universalId) {
-      const replyMsg = await this.getMessageByUniversalId(message.message.replyTo.universalId);
-      if (replyMsg) {
-        return {
-          ...message,
-          message: {
-            ...message.message,
-            replyTo: replyMsg
-          }
-        };
-      }
-    }
-    return message;
-  } catch (error) {
-    console.error('[PLUGINS] Error obteniendo contexto:', error.message);
-    return message;
-  }
-}
-
-async getMessageByUniversalId(universalId) {
-  try {
-    const len = await this.historyClient.lLen('history:global');
-    const limit = Math.min(len, 1000);
-
-    for (let i = 0; i < limit; i++) {
-      const msg = await this.historyClient.lIndex('history:global', -1 - i);
-      if (msg) {
-        try {
-          const parsed = JSON.parse(msg);
-          if (parsed.universalId === universalId) return parsed;
-        } catch (e) {
-          continue;
+  async getFullContext(message) {
+    try {
+      if (message.message?.replyTo?.universalId) {
+        const replyMsg = await this.getMessageByUniversalId(message.message.replyTo.universalId);
+        if (replyMsg) {
+          return {
+            ...message,
+            message: {
+              ...message.message,
+              replyTo: replyMsg
+            }
+          };
         }
       }
-    }
-    return null;
-  } catch (error) {
-    console.error('[PLUGINS] Error buscando mensaje:', error.message);
-    return null;
-  }
-}
-
-async handleWorkerMessage(pluginName, msg) {
-  if (msg.type === 'log') {
-    console.log(`[${pluginName.toUpperCase()}] ${msg.message}`);
-  } else if (msg.type === 'response') {
-    await this.publishResponse(pluginName, msg.originalMessage, msg.response);
-  } else if (msg.type === 'error') {
-    console.error(`[${pluginName.toUpperCase()}] âŒ ${msg.message}`);
-  }
-}
-
-async publishResponse(pluginName, originalMessage, response) {
-  try {
-    const msg = {
-      universalId: crypto.randomUUID(),
-      timestamp: Date.now(),
-      platform: originalMessage.platform,
-      adapterId: originalMessage.adapterId,
-      eventType: 'message',
-      server: originalMessage.server,
-      conversation: originalMessage.conversation,
-      thread: originalMessage.thread,
-      author: {
-        id: 'bot_plugin',
-        username: 'bot',
-        displayName: 'Bot',
-        avatarUrl: null,
-        avatarPath: null,
-        bot: true
-      },
-      message: {
-        id: crypto.randomUUID(),
-        text: response.text || response,
-        textFormatted: null,
-        replyTo: {
-          messageId: originalMessage.message.id,
-          universalId: originalMessage.universalId,
-          text: originalMessage.message.text.substring(0, 100),
-          author: originalMessage.author
-        },
-        edited: false,
-        pinned: false
-      },
-      attachments: response.attachments || null,
-      reaction: null,
-      socialEvent: null,
-      configChange: null,
-      apiCall: response.apiCall || null,
-      raw: {},
-      isPluginResponse: true
-    };
-
-    await this.redisClient.publish('bot.On.AdaptadorMessage', JSON.stringify(msg));
-  } catch (error) {
-    console.error(`[PLUGINS] âŒ Error publicando respuesta de ${pluginName}:`, error.message);
-  }
-}
-
-async shutdown() {
-  console.log('[PLUGINS] ðŸ›‘ Cerrando...');
-
-  if (this.watcher) {
-    this.watcher.close();
-  }
-
-  for (const [name, worker] of this.activeWorkers) {
-    try {
-      await worker.terminate();
+      return message;
     } catch (error) {
-      console.error(`[PLUGINS] âŒ Error cerrando ${name}:`, error.message);
+      console.error('[PLUGINS] Error obteniendo contexto:', error.message);
+      return message;
     }
   }
 
-  if (this.redisClient) await this.redisClient.quit();
-  if (this.subscriberClient) await this.subscriberClient.quit();
-  if (this.historyClient) await this.historyClient.quit();
-}
+  async getMessageByUniversalId(universalId) {
+    try {
+      const loc = await this.redisClient.get(`idx:u2loc:${universalId}`);
+      if (!loc) return null;
+
+      const [aId, cId] = loc.split(':');
+      const data = await this.redisClient.hGet(`msg:${aId}:${cId}:u:${universalId}`, 'd');
+
+      return data ? JSON.parse(data) : null;
+    } catch (error) {
+      console.error('[PLUGINS] Error buscando mensaje:', error.message);
+      return null;
+    }
+  }
+
+  async handleWorkerMessage(pluginName, msg) {
+    if (msg.type === 'log') {
+      console.log(`[${pluginName.toUpperCase()}] ${msg.message}`);
+    } else if (msg.type === 'response') {
+      await this.publishResponse(pluginName, msg.originalMessage, msg.response);
+    } else if (msg.type === 'error') {
+      console.error(`[${pluginName.toUpperCase()}] 7Ã4 ${msg.message}`);
+    }
+  }
+
+  async publishResponse(pluginName, originalMessage, response) {
+    try {
+      const msg = {
+        universalId: crypto.randomUUID(),
+        timestamp: Date.now(),
+        platform: originalMessage.platform,
+        adapterId: originalMessage.adapterId,
+        eventType: 'message',
+        server: originalMessage.server,
+        conversation: originalMessage.conversation,
+        thread: originalMessage.thread,
+        author: {
+          id: 'webUser',
+          username: 'webUser',
+          displayName: 'Web User',
+          avatarUrl: null,
+          avatarPath: null,
+          bot: true
+        },
+        message: {
+          id: crypto.randomUUID(),
+          text: response.text || response,
+          textFormatted: null,
+          replyTo: {
+            messageId: originalMessage.message.id,
+            universalId: originalMessage.universalId,
+            text: originalMessage.message.text.substring(0, 100),
+            author: originalMessage.author
+          },
+          edited: false,
+          pinned: false
+        },
+        attachments: response.attachments || null,
+        reaction: null,
+        socialEvent: null,
+        configChange: null,
+        apiCall: response.apiCall || null,
+        raw: {},
+        isPluginResponse: true
+      };
+
+      await this.redisClient.publish('bot.On.AdaptadorMessage', JSON.stringify(msg));
+    } catch (error) {
+      console.error(`[PLUGINS] 7Ã4 Error publicando respuesta de ${pluginName}:`, error.message);
+    }
+  }
+
+  async shutdown() {
+    console.log('[PLUGINS] •0“5 Cerrando...');
+
+    if (this.watcher) {
+      this.watcher.close();
+    }
+
+    for (const [name, worker] of this.activeWorkers) {
+      try {
+        await worker.terminate();
+      } catch (error) {
+        console.error(`[PLUGINS] 7Ã4 Error cerrando ${name}:`, error.message);
+      }
+    }
+
+    if (this.redisClient) await this.redisClient.quit();
+    if (this.subscriberClient) await this.subscriberClient.quit();
+  }
 }
 
 export default PluginHandler;

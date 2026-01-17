@@ -11,438 +11,527 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const ABMetaInfo = () => {};
-
 ABMetaInfo({
-    pattern: 'dla ?(.*)',
-    url: '',
-    sudo: false,
-    desc: 'Descarga videos y audios de múltiples plataformas',
-    type: 'utilidad',
-    deps: ['']
+  pattern: 'dla ?(.*)',
+  url: '',
+  sudo: false,
+  desc: 'Descarga videos y audios con yt-dlp y aria2c',
+  type: 'utilidad',
+  deps: ['']
 });
 
-const CONFIG = {
-    DATA_DIR: path.join(__dirname, '..', '..', 'Extras', 'DatosPlugins', 'DLA'),
-    MEDIA_DIR: path.join(__dirname, '..', 'media'),
-    COOKIES_PATH: path.join(__dirname, '..', '..', 'Extras', 'DatosPlugins', 'DLA', 'cookies.txt'),
-    MAX_FILESIZE: parseInt(process.env.MEDIA_FILE_MAX || '500') * 1048576,
-    YT_DLP_BINARIES: new Map([
-        ['win32-x64', 'yt-dlp.exe'],
-        ['win32-ia32', 'yt-dlp_x86.exe'],
-        ['darwin', 'yt-dlp_macos'],
-        ['linux-x64', 'yt-dlp_linux'],
-        ['linux-arm64', 'yt-dlp_linux_aarch64'],
-        ['linux-arm', 'yt-dlp_linux_armv7l'],
-        ['default', 'yt-dlp']
-    ])
+const C = {
+  D: path.join(__dirname, '..', '..', 'Extras', 'DatosPlugins', 'DLA'),
+  M: path.join(__dirname, '..', 'media'),
+  K: path.join(__dirname, '..', '..', 'Extras', 'DatosPlugins', 'DLA', 'cookies.txt'),
+  S: parseInt(process.env.MEDIA_FILE_MAX || '500') * 1048576,
+  T: 600000,
+  B: new Map([
+    ['win32-x64', 'yt-dlp.exe'],
+    ['win32-ia32', 'yt-dlp_x86.exe'],
+    ['darwin', 'yt-dlp_macos'],
+    ['linux-x64', 'yt-dlp_linux'],
+    ['linux-arm64', 'yt-dlp_linux_aarch64'],
+    ['linux-arm', 'yt-dlp_linux_armv7l'],
+    ['default', 'yt-dlp']
+  ]),
+  F: {
+    video: ['-f', 'sd/18/bestvideo[height<=720][vcodec*=h264]+bestaudio[acodec*=aac]/bestvideo[height<=720]+bestaudio/best', '--sponsorblock-remove', 'all', '--embed-chapters', '--embed-metadata'],
+    audio: ['-f', 'ba/best', '-x', '--audio-format', 'mp3', '--audio-quality', '0', '--embed-metadata', '--convert-thumbnails', 'jpg', '--sponsorblock-remove', 'all']
+  },
+  A: ['--restrict-filenames', '--extractor-retries', '3', '--fragment-retries', '3', '--compat-options', 'no-youtube-unavailable-videos', '--ignore-errors', '--no-abort-on-error'],
+  R: ['--external-downloader', 'aria2c', '--external-downloader-args', 'aria2c:-x 16 -k 1M -j 16 --file-allocation=none --async-dns=false --max-tries=5 --retry-wait=3']
 };
 
-const PRESET_FORMATS = {
-    video: ['-f', 'sd/18/bestvideo[height<=720][vcodec*=h264]+bestaudio[acodec*=aac]/bestvideo[height<=720][vcodec*=h264]+bestaudio[acodec*=mp4a]/bestvideo[height<=720][vcodec*=h264]+bestaudio/bestvideo[height<=720]+bestaudio/bestvideo[vcodec*=h264]+bestaudio[acodec*=aac]/bestvideo[vcodec*=h264]+bestaudio[acodec*=mp4a]/bestvideo[vcodec*=h264]+bestaudio/bestvideo+bestaudio/best', '--sponsorblock-remove', 'all', '--embed-chapters', '--embed-metadata'],
-    audio: ['-f', 'ba/best', '-x', '--audio-format', 'mp3', '--audio-quality', '0', '--embed-metadata', '--convert-thumbnails', 'jpg', '--postprocessor-args', 'ffmpeg:-id3v2_version 3', '--sponsorblock-remove', 'all']
-};
+let B = null;
 
-const COMMON_ARGS = [
-    '--restrict-filenames',
-    '--extractor-retries', '3',
-    '--fragment-retries', '3',
-    '--compat-options', 'no-youtube-unavailable-videos',
-    '--ignore-errors',
-    '--no-abort-on-error'
-];
-
-let ytDlpBinaryPath = null;
-
-function log(message) {
-    parentPort.postMessage({
-        type: 'log',
-        message: message
-    });
+function l(m) {
+  parentPort.postMessage({ type: 'log', message: m });
 }
 
-function respond(originalMessage, text, attachments = null) {
-    parentPort.postMessage({
-        type: 'response',
-        originalMessage: originalMessage,
-        response: {
-            text: text,
-            attachments: attachments
+function r(o, t, a = null) {
+  parentPort.postMessage({
+    type: 'response',
+    originalMessage: o,
+    response: { text: t, attachments: a }
+  });
+}
+
+async function ensDir() {
+  await fs.mkdir(C.D, { recursive: true });
+  await fs.mkdir(C.M, { recursive: true });
+}
+
+async function isYt() {
+  try {
+    await execFileAsync('yt-dlp', ['--version']);
+    return true;
+  } catch { return false; }
+}
+
+function detBin() {
+  const k = `${os.platform()}-${os.arch()}`;
+  return C.B.get(k) || C.B.get('default');
+}
+
+async function dlBin() {
+  const n = detBin();
+  const u = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${n}`;
+  const p = path.join(C.D, n);
+  
+  l('⬇️ Descargando yt-dlp...');
+  
+  const f = (await import('node-fetch')).default;
+  const res = await f(u);
+  
+  if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
+  
+  const buf = Buffer.from(await res.arrayBuffer());
+  await fs.writeFile(p, buf);
+  
+  if (os.platform() !== 'win32') await fs.chmod(p, '755');
+  
+  l('✅ yt-dlp descargado');
+  return p;
+}
+
+async function getBin() {
+  if (B) return B;
+  if (await isYt()) {
+    B = 'yt-dlp';
+    return B;
+  }
+  
+  const n = detBin();
+  const p = path.join(C.D, n);
+  
+  try {
+    await fs.access(p);
+    B = p;
+    return B;
+  } catch {
+    B = await dlBin();
+    return B;
+  }
+}
+
+function bCook() {
+  try {
+    require('fs').accessSync(C.K, require('fs').constants.F_OK);
+    return ['--cookies', C.K];
+  } catch { return []; }
+}
+
+function nTime(s) {
+  const p = s.split(':');
+  if (p.length === 2) {
+    const [m, sec] = p;
+    return `00:${m.padStart(2, '0')}:${sec.padStart(2, '0')}`;
+  } else if (p.length === 3) {
+    const [h, m, sec] = p;
+    return `${h.padStart(2, '0')}:${m.padStart(2, '0')}:${sec.padStart(2, '0')}`;
+  }
+  return s;
+}
+
+function pTime(t) {
+  if (!t || !t.trim()) return null;
+  
+  const r = t.split(/\s+|,/).filter(x => x.trim());
+  const n = [];
+  
+  for (const rg of r) {
+    if (rg.includes('-')) {
+      const [st, en] = rg.split('-');
+      n.push(`*${nTime(st.trim())}-${nTime(en.trim())}`);
+    }
+  }
+  
+  return n.length > 0 ? n.join(',') : null;
+}
+
+function getCat(p) {
+  const e = path.extname(p).slice(1).toLowerCase();
+  const v = ['mp4', 'mkv', 'avi', 'webm', 'mov', 'flv', 'm4v'];
+  const a = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'wma'];
+  const i = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+  
+  if (v.includes(e)) return 'video';
+  if (a.includes(e)) return 'audio';
+  if (i.includes(e)) return 'image';
+  return 'document';
+}
+
+function getMime(p) {
+  const e = path.extname(p).slice(1).toLowerCase();
+  const m = {
+    'mp4': 'video/mp4', 'mkv': 'video/x-matroska', 'webm': 'video/webm',
+    'mp3': 'audio/mpeg', 'ogg': 'audio/ogg', 'm4a': 'audio/mp4',
+    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif'
+  };
+  return m[e] || 'application/octet-stream';
+}
+
+async function exec(args) {
+  const bin = await getBin();
+  return await execFileAsync(bin, args, { maxBuffer: 1024 * 1024 * 100, timeout: C.T });
+}
+
+function isUrl(s) {
+  try { new URL(s); return true; } catch { return false; }
+}
+
+async function chkZip() {
+  try {
+    await execFileAsync('which', ['zip']);
+    return true;
+  } catch { return false; }
+}
+
+async function zipFiles(d) {
+  const o = path.join(C.M, `pl_${Date.now()}.zip`);
+  const f = await fs.readdir(d);
+  await execFileAsync('zip', ['-r', o, ...f], { cwd: d, maxBuffer: 1024 * 1024 * 100 });
+  return o;
+}
+
+async function loadInfo(d) {
+  const f = await fs.readdir(d);
+  const j = f.filter(x => x.endsWith('.info.json'));
+  const m = new Map();
+  let g = null;
+  
+  for (const jf of j) {
+    try {
+      const c = await fs.readFile(path.join(d, jf), 'utf8');
+      const data = JSON.parse(c);
+      const base = jf.replace('.info.json', '');
+      const media = f.filter(x => {
+        const fb = x.substring(0, x.lastIndexOf('.'));
+        return fb === base && !x.endsWith('.info.json');
+      });
+      
+      if (media.length > 0) {
+        for (const mf of media) {
+          m.set(mf, { title: data.title || '', desc: data.description || '', up: data.uploader || '' });
         }
-    });
+      } else if (!g) {
+        g = { title: data.title || '', desc: data.description || '', up: data.uploader || '' };
+      }
+    } catch { continue; }
+  }
+  
+  return { m, g };
 }
 
-async function ensureDirectories() {
-    await fs.mkdir(CONFIG.DATA_DIR, { recursive: true });
-    await fs.mkdir(CONFIG.MEDIA_DIR, { recursive: true });
+function fmtCap(i) {
+  if (!i) return null;
+  const t = i.up ? `> ${i.title} - ${i.up}` : i.title;
+  const d = i.desc ? `${i.desc}` : '';
+  return d ? `${t}\n${d}` : t;
 }
 
-async function isYtDlpAvailable() {
+async function fixExt(p) {
+  const e = path.extname(p).slice(1).toLowerCase();
+  const known = ['mp4', 'mkv', 'webm', 'mp3', 'ogg', 'm4a', 'jpg', 'png', 'gif'];
+  if (known.includes(e)) return p;
+  
+  try {
+    const { stdout } = await execFileAsync('file', ['-b', '--extension', p]);
+    const det = stdout.trim().split('/')[0];
+    if (det && det !== '???') {
+      const np = e ? p.replace(/\.[^.]*$/, `.${det}`) : `${p}.${det}`;
+      await fs.rename(p, np);
+      return np;
+    }
+  } catch {}
+  return p;
+}
+
+async function clean(t) {
+  try {
+    const s = await fs.stat(t);
+    if (s.isDirectory()) {
+      await fs.rm(t, { recursive: true, force: true });
+    } else {
+      await fs.unlink(t);
+    }
+  } catch {}
+}
+
+async function updt() {
+  try {
+    const res = await exec(['--update-to', 'master']);
+    return `🔄 ${res.stdout || res.stderr || 'Actualizado'}`;
+  } catch { return null; }
+}
+
+async function dlMedia(msg, urls, fmt = 'video', pl = false, time = null) {
+  const sid = `dla_${Date.now()}`;
+  const od = path.join(C.M, sid);
+  const ck = bCook();
+  
+  await fs.mkdir(od, { recursive: true });
+  
+  r(msg, '⏳ Descargando...');
+  
+  const isMp3Pl = fmt === 'audio' && pl;
+  const isDirect = fmt === 'video' && !pl;
+  let err = null;
+  
+  for (const u of urls) {
+    const ot = path.join(od, '%(title).70s.%(ext)s');
+    const pla = pl ? ['--yes-playlist', '--playlist-items', '1:20'] : ['--no-playlist'];
+    const tra = time && !pl ? ['--download-sections', time] : [];
+    const ija = isDirect ? ['--write-info-json'] : [];
+    
+    const args = ['--max-filesize', C.S.toString(), ...C.A, ...pla, ...ck, ...tra, ...ija, ...C.F[fmt], '-o', ot, u];
+    
     try {
-        await execFileAsync('yt-dlp', ['--version']);
-        return true;
-    } catch {
-        return false;
+      await exec(args);
+    } catch (e) {
+      err = e;
     }
-}
-
-function detectYtDlpBinaryName() {
-    const platform = os.platform();
-    const arch = os.arch();
-    const key = `${platform}-${arch}`;
-    return CONFIG.YT_DLP_BINARIES.get(key) || CONFIG.YT_DLP_BINARIES.get('default');
-}
-
-async function downloadYtDlpBinary() {
-    const fileName = detectYtDlpBinaryName();
-    const downloadUrl = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${fileName}`;
-    const filePath = path.join(CONFIG.DATA_DIR, fileName);
-
-    log('⬇️ Descargando yt-dlp...');
-
-    const fetch = (await import('node-fetch')).default;
-    const response = await fetch(downloadUrl);
+  }
+  
+  let af = await fs.readdir(od);
+  let fls = af.filter(x => !x.endsWith('.info.json'));
+  
+  if (fls.length === 0 && isDirect) {
+    for (const u of urls) {
+      const ot = path.join(od, '%(title).70s.%(ext)s');
+      const tra = time ? ['--download-sections', time] : [];
+      const args = ['--max-filesize', C.S.toString(), ...C.A, ...C.R, ['--no-playlist'], ...ck, ...tra, ...C.F[fmt], '-o', ot, u];
+      
+      try {
+        await exec(args);
+      } catch (e) {
+        err = e;
+      }
+    }
     
-    if (!response.ok) {
-        throw new Error(`Download failed: ${response.statusText}`);
+    af = await fs.readdir(od);
+    fls = af.filter(x => !x.endsWith('.info.json'));
+  }
+  
+  if (fls.length === 0) {
+    await clean(od);
+    const em = err ? err.stderr || err.message || 'Error' : 'Sin archivos';
+    const um = await updt();
+    r(msg, um ? `${em}\n\n${um}` : em);
+    return;
+  }
+  
+  let im = new Map();
+  let gi = null;
+  
+  if (isDirect) {
+    const { m, g } = await loadInfo(od);
+    im = m;
+    gi = g;
+  }
+  
+  if (isMp3Pl && fls.length > 1 && await chkZip()) {
+    try {
+      const zp = await zipFiles(od);
+      const atts = [{
+        type: 'document',
+        fileUrl: null,
+        filePath: zp,
+        filename: path.basename(zp),
+        mimeType: 'application/zip',
+        size: null, width: null, height: null, duration: null,
+        caption: 'Usa 7zip'
+      }];
+      r(msg, '✅ Playlist ZIP', atts);
+      await clean(zp);
+      await clean(od);
+      return;
+    } catch {}
+  }
+  
+const atts = [];
+let mainCaption = `✅ ${fls.length} archivo(s)`;
+
+for (let i = 0; i < fls.length; i++) {
+  const f = fls[i];
+  const fp = await fixExt(path.join(od, f));
+  const cat = getCat(fp);
+  const mime = getMime(fp);
+  let cap = null;
+  
+  if (isDirect && fls.length === 1) {
+    // Un solo archivo: poner info en caption del mensaje
+    if (im.has(f)) {
+      mainCaption = fmtCap(im.get(f));
+    } else if (gi) {
+      mainCaption = fmtCap(gi);
     }
-
-    const buffer = Buffer.from(await response.arrayBuffer());
-    await fs.writeFile(filePath, buffer);
-
-    if (os.platform() !== 'win32') {
-        await fs.chmod(filePath, '755');
-    }
-
-    log('✅ yt-dlp descargado correctamente');
-
-    return filePath;
+  }
+  
+  atts.push({
+    type: cat,
+    fileUrl: null,
+    filePath: fp,
+    filename: path.basename(fp),
+    mimeType: mime,
+    size: null, width: null, height: null, duration: null,
+    caption: null  // No caption individual
+  });
 }
 
-async function detectYtDlpBinary() {
-    if (ytDlpBinaryPath) {
-        return ytDlpBinaryPath;
-    }
+r(msg, mainCaption, atts);
+  
+  if (err) {
+    const em = err.stderr || err.message || '';
+    const um = await updt();
+    if (um) l(um);
+  }
+}
 
-    if (await isYtDlpAvailable()) {
-        ytDlpBinaryPath = 'yt-dlp';
-        return ytDlpBinaryPath;
-    }
-
-    const fileName = detectYtDlpBinaryName();
-    const filePath = path.join(CONFIG.DATA_DIR, fileName);
+async function search(msg, q, vid = false) {
+  const sid = `dla_${Date.now()}`;
+  const od = path.join(C.M, sid);
+  const ck = bCook();
+  
+  await fs.mkdir(od, { recursive: true });
+  
+  const ot = path.join(od, '%(title).70s.%(ext)s');
+  const fa = vid ? C.F.video : C.F.audio;
+  
+  const srcs = [
+    { s: 'ytsearch', n: 'YouTube' },
+    ...(vid ? [] : [{ s: 'scsearch', n: 'SoundCloud' }])
+  ];
+  
+  r(msg, `🔍 ${q}`);
+  
+  for (const { s, n } of srcs) {
+    l(`Buscando ${n}...`);
+    
+    const su = `${s}10:${q}`;
+    const args = ['--max-filesize', C.S.toString(), ...C.A, '--playlist-items', '1', ...fa, ...ck, '-o', ot, su];
     
     try {
-        await fs.access(filePath);
-        ytDlpBinaryPath = filePath;
-        return ytDlpBinaryPath;
-    } catch {
-        ytDlpBinaryPath = await downloadYtDlpBinary();
-        return ytDlpBinaryPath;
-    }
-}
-
-function buildCookiesArgs() {
-    try {
-        require('fs').accessSync(CONFIG.COOKIES_PATH, require('fs').constants.F_OK);
-        return ['--cookies', CONFIG.COOKIES_PATH];
-    } catch {
-        return [];
-    }
-}
-
-function normalizeTimeSegment(segment) {
-    const parts = segment.split(':');
-    
-    if (parts.length === 2) {
-        const [min, sec] = parts;
-        return `00:${min.padStart(2, '0')}:${sec.padStart(2, '0')}`;
-    } else if (parts.length === 3) {
-        const [h, m, s] = parts;
-        return `${h.padStart(2, '0')}:${m.padStart(2, '0')}:${s.padStart(2, '0')}`;
+      await exec(args);
+    } catch (e) {
+      l(`Error ${n}: ${e.message}`);
     }
     
-    return segment;
-}
-
-function parseTimeRanges(timeString) {
-    if (!timeString || !timeString.trim()) {
-        return null;
-    }
-
-    const ranges = timeString.split(/\s+|,/).filter(r => r.trim());
-    const normalizedRanges = [];
-
-    for (const range of ranges) {
-        if (range.includes('-')) {
-            const [start, end] = range.split('-');
-            const normalizedStart = normalizeTimeSegment(start.trim());
-            const normalizedEnd = normalizeTimeSegment(end.trim());
-            normalizedRanges.push(`*${normalizedStart}-${normalizedEnd}`);
-        }
-    }
-
-    return normalizedRanges.length > 0 ? normalizedRanges.join(',') : null;
-}
-
-function getFileCategory(filePath) {
-    const ext = path.extname(filePath).slice(1).toLowerCase();
+    const af = await fs.readdir(od);
+    const fls = af.filter(x => !x.endsWith('.info.json'));
     
-    const videoExts = ['mp4', 'mkv', 'avi', 'webm', 'mov', 'flv', 'm4v'];
-    const audioExts = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'wma'];
-    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
-    
-    if (videoExts.includes(ext)) return 'video';
-    if (audioExts.includes(ext)) return 'audio';
-    if (imageExts.includes(ext)) return 'image';
-    return 'document';
-}
-
-function getMimeType(filePath) {
-    const ext = path.extname(filePath).slice(1).toLowerCase();
-    const mimeTypes = {
-        'mp4': 'video/mp4',
-        'mkv': 'video/x-matroska',
-        'webm': 'video/webm',
-        'mp3': 'audio/mpeg',
-        'ogg': 'audio/ogg',
-        'm4a': 'audio/mp4',
-        'jpg': 'image/jpeg',
-        'jpeg': 'image/jpeg',
-        'png': 'image/png',
-        'gif': 'image/gif'
-    };
-    return mimeTypes[ext] || 'application/octet-stream';
-}
-
-async function safeExecuteYtDlp(args) {
-    const ytDlpPath = await detectYtDlpBinary();
-    return await execFileAsync(ytDlpPath, args, {
-        maxBuffer: 1024 * 1024 * 10,
-        timeout: 600000
-    });
-}
-
-function isUrl(str) {
-    try {
-        new URL(str);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-async function downloadMedia(message, urls, formatType = 'video', enablePlaylist = false, timeRanges = null) {
-    const sessionId = `dla_${Date.now()}`;
-    const outputDir = path.join(CONFIG.MEDIA_DIR, sessionId);
-    const cookiesArgs = buildCookiesArgs();
-
-    await fs.mkdir(outputDir, { recursive: true });
-
-    respond(message, '⏳ Descargando...');
-
-    for (const url of urls) {
-        const outputTemplate = path.join(outputDir, '%(title).70s.%(ext)s');
-        const playlistArgs = enablePlaylist ? ['--yes-playlist', '--playlist-items', '1:20'] : ['--no-playlist'];
-        const timeRangeArgs = timeRanges && !enablePlaylist ? ['--download-sections', timeRanges] : [];
+    if (fls.length > 0) {
+      const atts = [];
+      
+      for (const f of fls) {
+        const fp = await fixExt(path.join(od, f));
+        const cat = getCat(fp);
+        const mime = getMime(fp);
         
-        const args = [
-            '--max-filesize', CONFIG.MAX_FILESIZE.toString(),
-            ...COMMON_ARGS,
-            ...playlistArgs,
-            ...cookiesArgs,
-            ...timeRangeArgs,
-            ...PRESET_FORMATS[formatType],
-            '-o', outputTemplate,
-            url
-        ];
-
-        try {
-            await safeExecuteYtDlp(args);
-        } catch (error) {
-            log(`Error descargando ${url}: ${error.message}`);
-        }
-    }
-
-    const allFiles = await fs.readdir(outputDir);
-    const files = allFiles.filter(f => !f.endsWith('.info.json') && !f.endsWith('.jpg') && !f.endsWith('.webp'));
-    
-    if (files.length === 0) {
-        await fs.rm(outputDir, { recursive: true, force: true });
-        respond(message, '❌ No se descargaron archivos. El archivo puede ser muy grande o la URL es inválida.');
-        return;
-    }
-
-    const attachments = [];
-
-    for (const file of files) {
-        const filePath = path.join(outputDir, file);
-        const category = getFileCategory(filePath);
-        const mimeType = getMimeType(filePath);
-
-        attachments.push({
-            type: category,
-            fileUrl: null,
-            filePath: filePath,
-            filename: file,
-            mimeType: mimeType,
-            size: null,
-            width: null,
-            height: null,
-            duration: null,
-            caption: null
+        atts.push({
+          type: cat,
+          fileUrl: null,
+          filePath: fp,
+          filename: path.basename(fp),
+          mimeType: mime,
+          size: null, width: null, height: null, duration: null,
+          caption: null
         });
+      }
+      
+      r(msg, `✅ ${n}`, atts);
+      return;
     }
-
-    respond(message, `✅ ${files.length} archivo(s) descargado(s)`, attachments);
-
+  }
+  
+  await clean(od);
+  r(msg, `❌ No encontrado: ${q}`);
 }
 
-async function searchAndDownload(message, searchQuery, isVideo = false) {
-    const sessionId = `dla_${Date.now()}`;
-    const outputDir = path.join(CONFIG.MEDIA_DIR, sessionId);
-    const cookiesArgs = buildCookiesArgs();
-    
-    await fs.mkdir(outputDir, { recursive: true });
-
-    const outputTemplate = path.join(outputDir, '%(title).70s.%(ext)s');
-    
-    const formatArgs = isVideo ? PRESET_FORMATS.video : PRESET_FORMATS.audio;
-    
-    const searchSources = [
-        { source: 'ytsearch', name: 'YouTube' },
-        ...(isVideo ? [] : [
-            { source: 'scsearch', name: 'SoundCloud' }
-        ])
-    ];
-
-    let success = false;
-
-    respond(message, `🔍 Buscando: ${searchQuery}`);
-
-    for (const { source, name } of searchSources) {
-        if (success) break;
-
-        log(`Buscando en ${name}...`);
-
-        const searchUrl = `${source}10:${searchQuery}`;
-        const args = [
-            '--max-filesize', CONFIG.MAX_FILESIZE.toString(),
-            ...COMMON_ARGS,
-            '--playlist-items', '1',
-            ...formatArgs,
-            ...cookiesArgs,
-            '-o', outputTemplate,
-            searchUrl
-        ];
-
-        try {
-            await safeExecuteYtDlp(args);
-        } catch (error) {
-            log(`Error buscando en ${name}: ${error.message}`);
-        }
-
-        const allFiles = await fs.readdir(outputDir);
-        const files = allFiles.filter(f => !f.endsWith('.info.json') && !f.endsWith('.jpg') && !f.endsWith('.webp'));
-        
-        if (files.length > 0) {
-            const attachments = [];
-
-            for (const file of files) {
-                const filePath = path.join(outputDir, file);
-                const category = getFileCategory(filePath);
-                const mimeType = getMimeType(filePath);
-
-                attachments.push({
-                    type: category,
-                    fileUrl: null,
-                    filePath: filePath,
-                    filename: file,
-                    mimeType: mimeType,
-                    size: null,
-                    width: null,
-                    height: null,
-                    duration: null,
-                    caption: null
-                });
-            }
-
-            respond(message, `✅ Encontrado en ${name}`, attachments);
-
-
-            success = true;
-            break;
-        }
+async function upCook(msg, txt = null) {
+  const qm = msg.message?.replyTo;
+  let cc = null;
+  
+  if (txt) {
+    cc = txt;
+  } else if (qm && qm.attachments && qm.attachments.length > 0) {
+    const att = qm.attachments[0];
+    if (att.filePath && require('fs').existsSync(att.filePath)) {
+      cc = await fs.readFile(att.filePath, 'utf8');
+    } else {
+      r(msg, '❌ Archivo no encontrado');
+      return;
     }
-
-    if (!success) {
-        await fs.rm(outputDir, { recursive: true, force: true });
-        respond(message, `❌ No se encontró: ${searchQuery}`);
-    }
+  } else {
+    r(msg, '❌ Cita archivo o texto');
+    return;
+  }
+  
+  await ensDir();
+  await fs.writeFile(C.K, cc);
+  r(msg, '✅ Cookies subidas');
 }
 
 parentPort.on('message', async (data) => {
-    try {
-        const { message, args } = data;
-        
-        await ensureDirectories();
-        
-        const input = args.trim();
-        
-        if (!input) {
-            respond(message, `🎵 Uso del comando:
-
-.dla <búsqueda> - Buscar canción
-.dla vd <búsqueda> - Buscar video
-.dla <url> - Descargar de URL
-.dla mp3 <url> - Playlist como MP3
-.dla <url> --t 1:30-2:45 - Segmento
-
-Límite: ${CONFIG.MAX_FILESIZE / 1048576}MB`);
-            return;
-        }
-
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        const urls = (input.match(urlRegex) || []).filter(url => isUrl(url));
-
-        if (urls.length > 0) {
-            let commandPart = input;
-            urls.forEach(url => {
-                commandPart = commandPart.replace(url, '').trim();
-            });
-            
-            const parts = commandPart.split(/\s+/).filter(p => p);
-            const firstPart = parts[0] || '';
-            
-            if (firstPart === 'mp3') {
-                await downloadMedia(message, urls, 'audio', true, null);
-            } else {
-                let timeRanges = null;
-                const timeIndex = parts.indexOf('--t');
-                if (timeIndex !== -1 && parts[timeIndex + 1]) {
-                    const timeString = parts.slice(timeIndex + 1).join(' ');
-                    timeRanges = parseTimeRanges(timeString);
-                }
-                await downloadMedia(message, urls, 'video', false, timeRanges);
-            }
-            return;
-        }
-
-        const argsParts = input.trim().split(/\s+/);
-        const command = argsParts[0];
-        const remainingArgs = argsParts.slice(1);
-        
-        if (command === 'vd') {
-            await searchAndDownload(message, remainingArgs.join(' '), true);
-        } else {
-            await searchAndDownload(message, input, false);
-        }
-        
-    } catch (error) {
-        parentPort.postMessage({
-            type: 'error',
-            message: `Error: ${error.message}`
-        });
-        
-        respond(data.message, `❌ Error: ${error.message}`);
+  try {
+    const { message, args } = data;
+    await ensDir();
+    
+    const inp = args.trim();
+    
+    if (!inp) {
+      r(message, `🎵 .dla <búsqueda>
+🎥 .dla vd <búsqueda>
+⬇️ .dla <url>
+✂️ .dla <url> --t 1:30-2:45
+🎵 .dla mp3 <url>
+🍪 .dla cookies <texto>
+Límite: ${C.S / 1048576}MB`);
+      return;
     }
+    
+    if (inp.toLowerCase().startsWith('cookies')) {
+      const ct = inp.substring('cookies'.length).trim();
+      await upCook(message, ct || null);
+      return;
+    }
+    
+    const ur = /(https?:\/\/[^\s]+)/g;
+    const us = (inp.match(ur) || []).filter(u => isUrl(u));
+    
+    if (us.length > 0) {
+      let cp = inp;
+      us.forEach(u => { cp = cp.replace(u, '').trim(); });
+      
+      const pts = cp.split(/\s+/).filter(p => p);
+      const fp = pts[0] || '';
+      
+      if (fp === 'mp3') {
+        await dlMedia(message, us, 'audio', true, null);
+      } else {
+        let tr = null;
+        const ti = pts.indexOf('--t');
+        if (ti !== -1 && pts[ti + 1]) {
+          const ts = pts.slice(ti + 1).join(' ');
+          tr = pTime(ts);
+        }
+        await dlMedia(message, us, 'video', false, tr);
+      }
+      return;
+    }
+    
+    const ap = inp.trim().split(/\s+/);
+    const cmd = ap[0];
+    const ra = ap.slice(1);
+    
+    if (cmd === 'vd') {
+      await search(message, ra.join(' '), true);
+    } else {
+      await search(message, inp, false);
+    }
+  } catch (error) {
+    parentPort.postMessage({ type: 'error', message: `Error: ${error.message}` });
+    r(data.message, `❌ ${error.message}`);
+  }
 });
